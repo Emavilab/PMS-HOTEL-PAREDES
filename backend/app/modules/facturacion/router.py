@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -5,7 +7,7 @@ from sqlalchemy import func
 from app.core.database import get_db
 from app.core.dependencies import PersonalUsuario
 from app.common.auditoria import crear_registro_auditoria
-from app.modules.facturacion.modelos import Cargo, Pago
+from app.modules.facturacion.modelos import Cargo, Pago, Factura
 from app.modules.facturacion.esquemas import (
     CargoCrear,
     CargoResponse,
@@ -17,6 +19,54 @@ from app.modules.reservas.modelos import Reserva
 from app.modules.usuarios.modelos import Usuario
 
 router = APIRouter(prefix="/reservas", tags=["Facturacion"])
+router_facturas = APIRouter(prefix="/facturas", tags=["Facturas"])
+
+
+@router_facturas.get("", response_model=list[dict])
+def listar_facturas(
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(PersonalUsuario),
+):
+    facturas = db.query(Factura).order_by(Factura.fecha_emision.desc()).all()
+    resultado = []
+    for f in facturas:
+        try:
+            datos = json.loads(f.datos)
+        except (ValueError, TypeError):
+            datos = {}
+        resultado.append({
+            "id": f.id,
+            "numero": f.numero,
+            "reserva_id": f.reserva_id,
+            "fecha_emision": f.fecha_emision.isoformat() if f.fecha_emision else None,
+            "datos": datos,
+        })
+    return resultado
+
+
+@router_facturas.get("/{factura_id}", response_model=dict)
+def obtener_factura(
+    factura_id: str,
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(PersonalUsuario),
+):
+    factura = db.query(Factura).filter(Factura.id == factura_id).first()
+    if not factura:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Factura no encontrada",
+        )
+    try:
+        datos = json.loads(factura.datos)
+    except (ValueError, TypeError):
+        datos = {}
+    return {
+        "id": factura.id,
+        "numero": factura.numero,
+        "reserva_id": factura.reserva_id,
+        "fecha_emision": factura.fecha_emision.isoformat() if factura.fecha_emision else None,
+        "datos": datos,
+    }
 
 
 @router.post("/{reserva_id}/cargos", response_model=CargoResponse, status_code=status.HTTP_201_CREATED)

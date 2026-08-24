@@ -33,7 +33,7 @@ const navItems = [
   { href: "/huespedes", label: "Huéspedes", icon: Users, roles: ["admin", "gerente", "recepcionista"] },
   { href: "/habitaciones", label: "Habitaciones", icon: BedDouble, roles: ["admin", "gerente", "recepcionista"] },
   { href: "/ventas", label: "Ventas", icon: ShoppingCart, roles: ["admin", "gerente", "recepcionista"] },
-  { href: "/housekeeping", label: "Housekeeping", icon: Building2, roles: ["admin", "gerente", "recepcionista"] },
+  { href: "/housekeeping", label: "Housekeeping", icon: Building2, roles: ["admin", "gerente", "recepcionista", "limpieza"] },
   { href: "/facturacion", label: "Facturación", icon: Receipt, roles: ["admin", "gerente", "recepcionista"] },
   { href: "/caja", label: "Caja", icon: DollarSign, roles: ["admin", "gerente"] },
   { href: "/reportes", label: "Reportes", icon: BarChart3, roles: ["admin", "gerente"] },

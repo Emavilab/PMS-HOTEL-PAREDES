@@ -17,6 +17,7 @@ export default function NuevaReservaPage() {
   const [guestResults, setGuestResults] = useState<Huesped[]>([])
   const [selectedGuest, setSelectedGuest] = useState<any | null>(null)
   const [roomTypes, setRoomTypes] = useState<TipoHabitacion[]>([])
+  const [taxRate, setTaxRate] = useState(15)
   const [searching, setSearching] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
@@ -40,7 +41,12 @@ export default function NuevaReservaPage() {
   })
 
   useEffect(() => {
-    api.tiposHabitacion.listar().then(setRoomTypes).catch((err: any) => setError(err.message))
+    Promise.all([api.tiposHabitacion.listar(), api.configuracion.obtener()])
+      .then(([types, config]) => {
+        setRoomTypes(types)
+        setTaxRate(Number(config.impuesto) || 0)
+      })
+      .catch((err: any) => setError(err.message))
     const hoy = new Date().toISOString().split("T")[0]
     const maniana = new Date(Date.now() + 86400000).toISOString().split("T")[0]
     setForm((f) => ({ ...f, fecha_entrada: hoy, fecha_salida: maniana }))
@@ -77,7 +83,7 @@ export default function NuevaReservaPage() {
   const fechaSalida = form.fecha_salida ? new Date(form.fecha_salida + "T12:00:00") : null
   const noches = fechaEntrada && fechaSalida ? Math.max(0, Math.round((fechaSalida.getTime() - fechaEntrada.getTime()) / 86400000)) : 0
   const subtotal = precioNoche * noches
-  const impuesto = Math.round(subtotal * 0.15 * 100) / 100
+  const impuesto = Math.round(subtotal * (taxRate / 100) * 100) / 100
   const descuento = form.descuento || 0
   const extra = extraMonto || 0
   const totalNeto = subtotal + impuesto - descuento + extra
@@ -283,7 +289,7 @@ export default function NuevaReservaPage() {
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
               <Line label={`Habitación (${noches} noche${noches !== 1 ? "s" : ""})`} value={formatCurrency(subtotal)} />
-              <Line label="Impuesto (15%)" value={formatCurrency(impuesto)} />
+              <Line label={`Impuesto (${taxRate}%)`} value={formatCurrency(impuesto)} />
               {descuento > 0 && <Line label="Descuento" value={`-${formatCurrency(descuento)}`} className="text-red-600" />}
               {extra > 0 && <Line label={`Extra: ${extraDesc || "sin descripción"}`} value={`+${formatCurrency(extra)}`} />}
               <div className="border-t pt-2">

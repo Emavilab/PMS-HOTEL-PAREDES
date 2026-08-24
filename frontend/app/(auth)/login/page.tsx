@@ -58,9 +58,9 @@ export default function LoginPage() {
 
     setLoading(true)
     try {
-      await login(email, password)
+      const usuario = await login(email, password)
       setSuccess("Inicio de sesión exitoso. Redirigiendo...")
-      setTimeout(() => router.push("/"), 800)
+      setTimeout(() => router.push(usuario.rol === "limpieza" ? "/housekeeping" : "/"), 800)
     } catch (err: any) {
       setError(err.message || "Error al iniciar sesión")
     } finally {

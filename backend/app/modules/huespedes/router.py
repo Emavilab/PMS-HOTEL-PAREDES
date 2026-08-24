@@ -119,6 +119,49 @@ def actualizar_huesped(
     return HuespedResponse.model_validate(huesped)
 
 
+@router.delete("/{huesped_id}", status_code=status.HTTP_204_NO_CONTENT)
+def eliminar_huesped(
+    huesped_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario_actual: Usuario = Depends(PersonalUsuario),
+):
+    huesped = db.query(Huesped).filter(Huesped.id == huesped_id).first()
+    if not huesped:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Huesped no encontrado",
+        )
+
+    reservas = db.query(Reserva).filter(Reserva.huesped_id == huesped_id).count()
+    if reservas:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No se puede eliminar un huesped con reservas asociadas",
+        )
+
+    valores_anteriores = {
+        "nombres": huesped.nombres,
+        "apellidos": huesped.apellidos,
+        "tipo_documento": huesped.tipo_documento,
+        "numero_documento": huesped.numero_documento,
+        "telefono": huesped.telefono,
+        "email": huesped.email,
+    }
+    db.delete(huesped)
+    db.commit()
+
+    crear_registro_auditoria(
+        db=db,
+        usuario_id=usuario_actual.id,
+        accion="ELIMINAR",
+        tipo_entidad="Huesped",
+        entidad_id=huesped_id,
+        valores_anteriores=valores_anteriores,
+        direccion_ip=request.client.host if request.client else None,
+    )
+
+
 @router.get("/{huesped_id}/historial", response_model=HuespedHistorialResponse)
 def historial_huesped(
     huesped_id: str,

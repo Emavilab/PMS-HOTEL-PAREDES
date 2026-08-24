@@ -7,10 +7,14 @@ import { Button } from "@/components/ui/button"
 import { Badge, statusBadge } from "@/components/ui/badge"
 import { formatCurrency } from "@/lib/utils"
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+
 export default function VerificarSalidaPage() {
   const [ocupadas, setOcupadas] = useState<any[]>([])
   const [selected, setSelected] = useState<any | null>(null)
   const [verificacion, setVerificacion] = useState<any | null>(null)
+  const [factura, setFactura] = useState<any | null>(null)
+  const [hotelConfig, setHotelConfig] = useState<any | null>(null)
   const [metodoPago, setMetodoPago] = useState("Efectivo")
   const [loading, setLoading] = useState(true)
   const [loadingDetalle, setLoadingDetalle] = useState(false)
@@ -25,10 +29,15 @@ export default function VerificarSalidaPage() {
 
   useEffect(() => { loadData() }, [loadData])
 
+  useEffect(() => {
+    api.configuracion.obtener().then(setHotelConfig).catch(() => {})
+  }, [])
+
   async function selectReserva(reserva: any) {
     setSelected(reserva)
     setError("")
     setSuccess("")
+    setFactura(null)
     setLoadingDetalle(true)
     try {
       const data = await api.ventas.verificarSalida(reserva.reserva_id)
@@ -46,8 +55,9 @@ export default function VerificarSalidaPage() {
     setCulminando(true)
     setError("")
     try {
-      await api.ventas.culminarSalida(selected.reserva_id, metodoPago)
-      setSuccess("Salida culminada exitosamente")
+      const resultado = await api.ventas.culminarSalida(selected.reserva_id, metodoPago)
+      setFactura(resultado.factura)
+      setSuccess("Salida culminada exitosamente. Factura generada.")
       setSelected(null)
       setVerificacion(null)
       loadData()
@@ -124,7 +134,7 @@ export default function VerificarSalidaPage() {
 
                 <div className="border rounded-md divide-y text-sm">
                   <div className="flex justify-between p-2"><span>Subtotal ({verificacion.noches} noche{verificacion.noches !== 1 ? "s" : ""})</span><span>{formatCurrency(verificacion.subtotal)}</span></div>
-                  <div className="flex justify-between p-2"><span>Impuesto (15%)</span><span>{formatCurrency(verificacion.impuesto)}</span></div>
+                  <div className="flex justify-between p-2"><span>Impuesto ({Number(hotelConfig?.impuesto ?? 15)}%)</span><span>{formatCurrency(verificacion.impuesto)}</span></div>
                   {verificacion.descuento > 0 && <div className="flex justify-between p-2 text-red-600"><span>Descuento</span><span>-{formatCurrency(verificacion.descuento)}</span></div>}
                   <div className="flex justify-between p-2 font-medium"><span>Total habitación</span><span>{formatCurrency(verificacion.total_habitacion)}</span></div>
                 </div>
@@ -189,6 +199,102 @@ export default function VerificarSalidaPage() {
           </CardContent>
         </Card>
       </div>
+
+      {factura && (
+        <Card id="factura-salida" className="print-invoice overflow-hidden bg-white">
+          <CardHeader className="border-b">
+            <div className="no-print flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle className="text-lg">Factura de hospedaje</CardTitle>
+                <p className="text-sm text-gray-500">{factura.numero} · Reserva {factura.codigo_confirmacion}</p>
+              </div>
+              <Button variant="outline" onClick={() => window.print()}>Imprimir factura</Button>
+            </div>
+            <div className="hidden print:block">
+              <div className="flex items-start justify-between gap-6">
+                <div className="flex items-start gap-4">
+                  {hotelConfig?.logo_url && <img src={`${API_URL}${hotelConfig.logo_url}`} alt={hotelConfig?.nombre || "Hotel"} className="h-16 w-16 object-contain" />}
+                  <div>
+                    <h2 className="text-xl font-bold uppercase">{hotelConfig?.nombre || "Hotel Paredes"}</h2>
+                    {hotelConfig?.rtn && <p className="text-sm">RTN: {hotelConfig.rtn}</p>}
+                    {hotelConfig?.direccion && <p className="text-sm">{hotelConfig.direccion}</p>}
+                    <p className="text-sm">{[hotelConfig?.telefono, hotelConfig?.email].filter(Boolean).join(" · ")}</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-lg font-bold">FACTURA</p>
+                  <p className="text-sm">No. {factura.numero}</p>
+                  <p className="text-sm">Fecha: {new Date(factura.fecha).toLocaleDateString("es-HN")}</p>
+                </div>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="grid grid-cols-1 gap-3 rounded-md bg-gray-50 p-4 text-sm sm:grid-cols-2 lg:grid-cols-4 print:grid-cols-2 print:bg-white print:p-0">
+              <div><p className="text-gray-500 print:text-gray-700">Huesped</p><p className="font-medium">{factura.huesped_nombre}</p></div>
+              <div><p className="text-gray-500 print:text-gray-700">Documento</p><p className="font-medium">{factura.huesped_documento || "-"}</p></div>
+              <div><p className="text-gray-500 print:text-gray-700">Habitacion</p><p className="font-medium">{factura.habitacion_numero} · {factura.habitacion_tipo || "Sin tipo"}</p></div>
+              <div><p className="text-gray-500 print:text-gray-700">Estadia</p><p className="font-medium">{factura.fecha_entrada} a {factura.fecha_salida}</p></div>
+            </div>
+
+            <div className="overflow-x-auto rounded-md border print:overflow-visible">
+              <table className="w-full min-w-[680px] text-sm print:min-w-0 print:text-[11px]">
+                <thead>
+                  <tr className="border-b bg-gray-50">
+                    <th className="p-3 text-left font-medium text-gray-500">Descripcion</th>
+                    <th className="p-3 text-right font-medium text-gray-500">Cant.</th>
+                    <th className="p-3 text-right font-medium text-gray-500">P. Unitario</th>
+                    <th className="p-3 text-right font-medium text-gray-500">Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {factura.items.map((item: any, index: number) => (
+                    <tr key={`${item.descripcion}-${index}`} className="border-b last:border-0">
+                      <td className="p-3">{item.descripcion}</td>
+                      <td className="p-3 text-right">{item.cantidad}</td>
+                      <td className="p-3 text-right">{formatCurrency(item.precio_unitario)}</td>
+                      <td className="p-3 text-right font-medium">{formatCurrency(item.total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 print:block">
+              <div className="no-print rounded-md border p-4 text-sm">
+                <p className="mb-2 font-medium">Pagos registrados</p>
+                {factura.pagos.length === 0 ? (
+                  <p className="text-gray-500">Sin pagos registrados.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {factura.pagos.map((pago: any) => (
+                      <div key={pago.id} className="flex justify-between gap-3">
+                        <span>{pago.metodo_pago} · {pago.referencia || "Sin referencia"}</span>
+                        <span className="font-medium">{formatCurrency(pago.monto)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-md border p-4 text-sm print:ml-auto print:mt-4 print:w-72">
+                <div className="flex justify-between"><span>Subtotal hospedaje</span><span>{formatCurrency(factura.resumen.subtotal_habitacion)}</span></div>
+                {factura.resumen.descuento > 0 && <div className="flex justify-between"><span>Descuento</span><span>-{formatCurrency(factura.resumen.descuento)}</span></div>}
+                <div className="flex justify-between"><span>Impuesto</span><span>{formatCurrency(factura.resumen.impuesto)}</span></div>
+                {factura.resumen.total_consumos > 0 && <div className="flex justify-between"><span>Consumos</span><span>{formatCurrency(factura.resumen.total_consumos)}</span></div>}
+                {factura.resumen.mora_penalidad > 0 && <div className="flex justify-between text-red-600"><span>Mora/Penalidad</span><span>{formatCurrency(factura.resumen.mora_penalidad)}</span></div>}
+                <div className="mt-3 border-t pt-3 flex justify-between text-base font-bold"><span>Total factura</span><span>{formatCurrency(factura.resumen.total_factura)}</span></div>
+                <div className="no-print flex justify-between font-medium text-blue-700"><span>Cobrado al culminar salida</span><span>{formatCurrency(factura.resumen.total_cobrado_checkout)}</span></div>
+              </div>
+            </div>
+
+            <div className="hidden pt-10 text-center text-xs text-gray-500 print:block">
+              <p>Gracias por su preferencia.</p>
+              <p>Factura generada por el sistema de gestion hotelera.</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

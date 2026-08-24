@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog } from "@/components/ui/dialog"
 import { formatCurrency, formatDateShort } from "@/lib/utils"
-import { CalendarDays, ChevronLeft, ChevronRight, LayoutList, Plus, Search, Trash2 } from "lucide-react"
+import { AlertTriangle, Ban, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, LayoutList, LogIn, Plus, Search, Trash2, UserX } from "lucide-react"
 import type { ReservaLista } from "@/types"
 
 type VistaReserva = "calendario" | "semana" | "dia" | "agenda"
@@ -38,13 +38,18 @@ export default function ReservasPage() {
   const [fechaActual, setFechaActual] = useState(() => startOfDay(new Date()))
   const [selectedReserva, setSelectedReserva] = useState<ReservaLista | null>(null)
 
+  const [error, setPageError] = useState("")
+
   useEffect(() => {
     loadReservations()
   }, [])
 
   function loadReservations() {
     setLoading(true)
-    api.reservas.listar().then(setReservations).finally(() => setLoading(false))
+    api.reservas.listar({ per_page: "200" })
+      .then((data) => setReservations(data.items || []))
+      .catch((err: any) => setPageError(err.message || "No se pudieron cargar las reservas"))
+      .finally(() => setLoading(false))
   }
 
   const activeReservations = reservations.filter((r) => r.estado !== "CHECKED_OUT")
@@ -92,6 +97,8 @@ export default function ReservasPage() {
         <MetricCard label="En casa" value={checkedIn.toString()} />
         <MetricCard label="Valor visible" value={formatCurrency(totalVisible)} muted={`${noIngreso} no ingreso`} />
       </div>
+
+      {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 
       {finishedCount > 0 && (
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
@@ -393,6 +400,9 @@ function ReservaDetalleDialog({ reserva, onClose, onChanged }: { reserva: Reserv
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
   const [roomOptions, setRoomOptions] = useState<any[]>([])
+  const [accion, setAccion] = useState<null | "confirmar" | "noshow" | "cancelar" | "checkin" | "eliminar">(null)
+  const [motivo, setMotivo] = useState("")
+  const [exito, setExito] = useState("")
 
   useEffect(() => {
     if (!reserva) return
@@ -400,6 +410,8 @@ function ReservaDetalleDialog({ reserva, onClose, onChanged }: { reserva: Reserv
     setLoading(true)
     setDetalle(null)
     setError("")
+    setAccion(null)
+    setMotivo("")
     api.reservas.obtener(reserva.id)
       .then((data) => {
         setDetalle(data)
@@ -410,7 +422,6 @@ function ReservaDetalleDialog({ reserva, onClose, onChanged }: { reserva: Reserv
           adultos: data.adultos || 1,
           ninos: data.ninos || 0,
           estado: data.estado || "PENDIENTE",
-          total: data.total || 0,
           descuento: data.descuento || 0,
           tiene_vehiculo: data.tiene_vehiculo || false,
           detalle_vehiculo: data.detalle_vehiculo || "",
@@ -443,31 +454,93 @@ function ReservaDetalleDialog({ reserva, onClose, onChanged }: { reserva: Reserv
       setError("Indica el detalle del vehículo")
       return
     }
-    const requiereCheckIn = form.estado === "CHECKED_IN" && detalle?.estado !== "CHECKED_IN"
-    if (requiereCheckIn && !form.habitacion_id) {
-      setError("Selecciona una habitación disponible para registrar el ingreso")
-      return
-    }
 
     setSaving(true)
     try {
-      const estadoParaActualizar = requiereCheckIn ? detalle.estado : form.estado
       await api.reservas.actualizar(reserva.id, {
         fecha_entrada: form.fecha_entrada,
         fecha_salida: form.fecha_salida,
         habitacion_id: form.habitacion_id || undefined,
         adultos: Number(form.adultos) || 1,
         ninos: Number(form.ninos) || 0,
-        estado: estadoParaActualizar,
-        total: Number(form.total) || 0,
         descuento: Number(form.descuento) || 0,
         tiene_vehiculo: Boolean(form.tiene_vehiculo),
         detalle_vehiculo: form.tiene_vehiculo ? form.detalle_vehiculo : undefined,
         solicitudes_especiales: form.solicitudes_especiales || undefined,
       })
-      if (requiereCheckIn) {
-        await api.reservas.checkIn(reserva.id, form.habitacion_id)
+      onChanged()
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function registrarIngreso() {
+    if (!reserva || !detalle) return
+    setError("")
+    if (!form.habitacion_id) {
+      setError("Selecciona una habitación disponible para registrar el ingreso")
+      return
+    }
+    if (!form.fecha_entrada || !form.fecha_salida || form.fecha_salida <= form.fecha_entrada) {
+      setError("Revisa las fechas antes de registrar el ingreso")
+      return
+    }
+
+    setSaving(true)
+    try {
+      await api.reservas.actualizar(reserva.id, {
+        fecha_entrada: form.fecha_entrada,
+        fecha_salida: form.fecha_salida,
+        habitacion_id: form.habitacion_id,
+        adultos: Number(form.adultos) || 1,
+        ninos: Number(form.ninos) || 0,
+        descuento: Number(form.descuento) || 0,
+      })
+      await api.reservas.checkIn(reserva.id, form.habitacion_id)
+      setAccion(null)
+      setExito("Ingreso registrado correctamente")
+      onChanged()
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const MENSAJES_ACCION: Record<string, { titulo: string; mensaje: string; boton: string }> = {
+    confirmar: { titulo: "Confirmar reserva", mensaje: `Se confirmara la reserva ${reserva?.codigo_confirmacion}.`, boton: "Confirmar" },
+    noshow: { titulo: "Marcar No Show", mensaje: `Se marcara la reserva ${reserva?.codigo_confirmacion} como no ingreso. Liberara el inventario de la habitacion.`, boton: "Marcar No Show" },
+    cancelar: { titulo: "Cancelar reserva", mensaje: `Se cancelara la reserva ${reserva?.codigo_confirmacion}. Esta accion no se puede revertir.`, boton: "Cancelar reserva" },
+    checkin: { titulo: "Registrar ingreso", mensaje: `Se registrara el ingreso del huesped y se asignara la habitacion seleccionada.`, boton: "Registrar ingreso" },
+    eliminar: { titulo: "Eliminar reserva", mensaje: `Se eliminara la reserva ${reserva?.codigo_confirmacion}. Solo es posible sin pagos registrados.`, boton: "Eliminar" },
+  }
+
+  async function ejecutarAccion() {
+    if (!reserva || !accion) return
+    setSaving(true)
+    setError("")
+    try {
+      if (accion === "confirmar") {
+        await api.reservas.confirmar(reserva.id)
+        setExito("Reserva confirmada correctamente")
+      } else if (accion === "noshow") {
+        await api.reservas.noShow(reserva.id)
+        setExito("Reserva marcada como no ingreso")
+      } else if (accion === "cancelar") {
+        await api.reservas.cancelar(reserva.id, motivo.trim() || undefined)
+        setExito("Reserva cancelada correctamente")
+      } else if (accion === "eliminar") {
+        await api.reservas.eliminar(reserva.id)
+        setExito("Reserva eliminada correctamente")
+      } else if (accion === "checkin") {
+        setAccion(null)
+        await registrarIngreso()
+        return
       }
+      setAccion(null)
+      setMotivo("")
       onChanged()
     } catch (err: any) {
       setError(err.message)
@@ -478,53 +551,110 @@ function ReservaDetalleDialog({ reserva, onClose, onChanged }: { reserva: Reserv
 
   async function handleDelete() {
     if (!reserva) return
-    if (!window.confirm(`¿Eliminar la reserva ${reserva.codigo_confirmacion}? Esta acción no se puede deshacer.`)) return
-
-    setSaving(true)
     setError("")
-    try {
-      await api.reservas.eliminar(reserva.id)
-      onChanged()
-    } catch (err: any) {
-      setError(err.message)
-    } finally {
-      setSaving(false)
-    }
+    setAccion("eliminar")
   }
 
-  return (
-    <Dialog open={!!reserva} onClose={onClose} title="Detalle de reservación" className="max-w-3xl">
-      {loading ? (
-        <p className="text-sm text-gray-500">Cargando reservación...</p>
-      ) : error ? (
-        <div className="space-y-4">
-          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-600">{error}</div>
-          {detalle && <ReservaForm detalle={detalle} form={form} setForm={setForm} roomOptions={roomOptions} />}
-          <DialogActions saving={saving} estado={form.estado} onClose={onClose} onSave={handleSave} onDelete={handleDelete} />
-        </div>
-      ) : detalle ? (
-        <div className="space-y-4">
-          <div className={`rounded-xl border p-4 ${getStatusClasses(form.estado)}`}>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide opacity-70">{detalle.codigo_confirmacion}</p>
-                <h3 className="mt-1 text-xl font-bold">{detalle.huesped ? `${detalle.huesped.nombres} ${detalle.huesped.apellidos}` : reserva?.huesped_nombre}</h3>
-                <p className="text-sm opacity-80">Hab. {reserva?.numero_habitacion || "sin asignar"}{reserva?.tipo_habitacion_nombre ? ` · ${reserva.tipo_habitacion_nombre}` : ""}</p>
-              </div>
-              <Badge {...statusBadge(form.estado)} />
-            </div>
-          </div>
+  const puedeGestionar = !!detalle && ["PENDIENTE", "CONFIRMADA"].includes(detalle.estado)
 
-          <ReservaForm detalle={detalle} form={form} setForm={setForm} roomOptions={roomOptions} />
-          <DialogActions saving={saving} estado={form.estado} onClose={onClose} onSave={handleSave} onDelete={handleDelete} />
+  return (
+    <>
+      <Dialog open={!!reserva} onClose={onClose} title="Detalle de reservación" className="max-w-3xl">
+        {loading ? (
+          <p className="text-sm text-gray-500">Cargando reservación...</p>
+        ) : error ? (
+          <div className="space-y-4">
+            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-600">{error}</div>
+            {detalle && <ReservaForm detalle={detalle} form={form} setForm={setForm} roomOptions={roomOptions} />}
+            {detalle && <DialogActions saving={saving} estado={detalle.estado} onClose={onClose} onSave={handleSave} onDelete={handleDelete} />}
+          </div>
+        ) : detalle ? (
+          <div className="space-y-4">
+            <div className={`rounded-xl border p-4 ${getStatusClasses(detalle.estado)}`}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide opacity-70">{detalle.codigo_confirmacion}</p>
+                  <h3 className="mt-1 text-xl font-bold">{detalle.huesped ? `${detalle.huesped.nombres} ${detalle.huesped.apellidos}` : reserva?.huesped_nombre}</h3>
+                  <p className="text-sm opacity-80">Hab. {reserva?.numero_habitacion || "sin asignar"}{reserva?.tipo_habitacion_nombre ? ` · ${reserva.tipo_habitacion_nombre}` : ""}</p>
+                </div>
+                <Badge {...statusBadge(detalle.estado)} />
+              </div>
+            </div>
+
+            {puedeGestionar && (
+              <div className="flex flex-wrap gap-2 rounded-xl border border-blue-100 bg-blue-50/60 p-3">
+                {detalle.estado === "PENDIENTE" && (
+                  <Button size="sm" onClick={() => setAccion("confirmar")}>
+                    <CheckCircle2 className="mr-1 h-4 w-4" /> Confirmar
+                  </Button>
+                )}
+                <Button size="sm" variant="outline" onClick={() => setAccion("checkin")} disabled={!form.habitacion_id && !roomOptions.length}>
+                  <LogIn className="mr-1 h-4 w-4" /> Registrar ingreso
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setAccion("noshow")}>
+                  <UserX className="mr-1 h-4 w-4" /> No Show
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setAccion("cancelar")}>
+                  <Ban className="mr-1 h-4 w-4" /> Cancelar
+                </Button>
+              </div>
+            )}
+
+            {detalle.motivo_cancelacion && (
+              <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm">
+                <span className="font-medium">Motivo de cancelación:</span> {detalle.motivo_cancelacion}
+              </div>
+            )}
+
+            <ReservaForm detalle={detalle} form={form} setForm={setForm} roomOptions={roomOptions} />
+            <DialogActions saving={saving} estado={detalle.estado} onClose={onClose} onSave={handleSave} onDelete={handleDelete} />
+          </div>
+        ) : null}
+      </Dialog>
+
+      <Dialog open={!!accion && accion !== "checkin"} onClose={() => setAccion(null)} title={accion ? MENSAJES_ACCION[accion].titulo : ""} className="max-w-md">
+        <div className="space-y-5">
+          <div className="flex gap-4">
+            <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${accion === "eliminar" || accion === "cancelar" ? "bg-red-100 text-red-600" : accion === "confirmar" ? "bg-green-100 text-green-600" : "bg-blue-100 text-blue-600"}`}>
+              {accion === "eliminar" || accion === "cancelar" ? <AlertTriangle className="h-6 w-6" /> : <CheckCircle2 className="h-6 w-6" />}
+            </div>
+            <p className="text-sm leading-6 text-gray-600">{accion ? MENSAJES_ACCION[accion].mensaje : ""}</p>
+          </div>
+          {accion === "cancelar" && (
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Motivo de cancelación (opcional)</label>
+              <Input value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ej: El huésped no podrá viajar" />
+            </div>
+          )}
+          {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-600">{error}</div>}
+          <div className="flex justify-end gap-2 border-t pt-4">
+            <Button type="button" variant="outline" onClick={() => setAccion(null)} disabled={saving}>Cancelar</Button>
+            <Button type="button" variant={accion === "eliminar" || accion === "cancelar" ? "destructive" : "default"} onClick={ejecutarAccion} disabled={saving}>
+              {saving ? "Procesando..." : accion ? MENSAJES_ACCION[accion].boton : ""}
+            </Button>
+          </div>
         </div>
-      ) : null}
-    </Dialog>
+      </Dialog>
+
+      <Dialog open={!!exito} onClose={() => setExito("")} title="Operación exitosa" className="max-w-sm">
+        <div className="space-y-5">
+          <div className="flex gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-600">
+              <CheckCircle2 className="h-6 w-6" />
+            </div>
+            <p className="text-sm leading-6 text-gray-600">{exito}</p>
+          </div>
+          <div className="flex justify-end border-t pt-4">
+            <Button type="button" onClick={() => setExito("")}>Aceptar</Button>
+          </div>
+        </div>
+      </Dialog>
+    </>
   )
 }
 
 function ReservaForm({ detalle, form, setForm, roomOptions }: { detalle: any; form: any; setForm: (form: any) => void; roomOptions: any[] }) {
-  const necesitaHabitacion = form.estado === "CHECKED_IN" && detalle.estado !== "CHECKED_IN" && !detalle.habitacion_id
+  const puedeCheckIn = ["PENDIENTE", "CONFIRMADA"].includes(detalle.estado) && !detalle.habitacion_id
 
   return (
     <div className="space-y-4">
@@ -551,25 +681,15 @@ function ReservaForm({ detalle, form, setForm, roomOptions }: { detalle: any; fo
           <Input type="number" min={0} value={form.ninos ?? 0} onChange={(e) => setForm({ ...form, ninos: parseInt(e.target.value) || 0 })} />
         </div>
         <div className="space-y-1">
-          <label className="text-sm font-medium">Estatus</label>
-          <select className="h-10 w-full rounded-md border border-gray-300 px-3 text-sm" value={form.estado || "PENDIENTE"} onChange={(e) => setForm({ ...form, estado: e.target.value })}>
-            {ESTADOS_RESERVA.map((estado) => <option key={estado.value} value={estado.value}>{estado.label}</option>)}
-          </select>
-        </div>
-        <div className="space-y-1">
-          <label className="text-sm font-medium">Total</label>
-          <Input type="number" min={0} step={0.01} value={form.total ?? 0} onChange={(e) => setForm({ ...form, total: parseFloat(e.target.value) || 0 })} />
-        </div>
-        <div className="space-y-1">
           <label className="text-sm font-medium">Descuento</label>
           <Input type="number" min={0} step={0.01} value={form.descuento ?? 0} onChange={(e) => setForm({ ...form, descuento: parseFloat(e.target.value) || 0 })} />
         </div>
       </div>
 
-      {necesitaHabitacion && (
+      {puedeCheckIn && (
         <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
-          <p className="text-sm font-semibold text-blue-950">Para registrar ingreso debes asignar una habitación</p>
-          <p className="mt-1 text-xs text-blue-800">Estas son habitaciones disponibles recomendadas para este tipo de reserva.</p>
+          <p className="text-sm font-semibold text-blue-950">Habitación para el ingreso</p>
+          <p className="mt-1 text-xs text-blue-800">Selecciona una habitación disponible para poder registrar el ingreso.</p>
           <div className="mt-3 space-y-2">
             {roomOptions.length === 0 ? (
               <p className="rounded-md bg-white p-3 text-sm text-blue-800">No hay habitaciones disponibles recomendadas. Cambia fechas, tipo de habitación o revisa disponibilidad.</p>

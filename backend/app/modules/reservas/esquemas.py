@@ -13,9 +13,9 @@ class ReservaCrear(BaseModel):
     habitacion_id: Optional[str] = None
     fecha_entrada: date
     fecha_salida: date
-    adultos: int = 1
-    ninos: int = 0
-    descuento: float = 0
+    adultos: int = Field(default=1, ge=1, le=20)
+    ninos: int = Field(default=0, ge=0, le=20)
+    descuento: float = Field(default=0, ge=0)
     origen: Optional[str] = None
     tiene_vehiculo: bool = False
     detalle_vehiculo: Optional[str] = None
@@ -28,14 +28,11 @@ class ReservaActualizar(BaseModel):
     habitacion_id: Optional[str] = None
     fecha_entrada: Optional[date] = None
     fecha_salida: Optional[date] = None
-    adultos: Optional[int] = None
-    ninos: Optional[int] = None
+    adultos: Optional[int] = Field(default=None, ge=1, le=20)
+    ninos: Optional[int] = Field(default=None, ge=0, le=20)
     estado: Optional[str] = None
     origen: Optional[str] = None
-    subtotal: Optional[float] = None
-    descuento: Optional[float] = None
-    impuesto: Optional[float] = None
-    total: Optional[float] = None
+    descuento: Optional[float] = Field(default=None, ge=0)
     tiene_vehiculo: Optional[bool] = None
     detalle_vehiculo: Optional[str] = None
     solicitudes_especiales: Optional[str] = None
@@ -61,6 +58,7 @@ class ReservaResponse(BaseModel):
     tiene_vehiculo: bool = False
     detalle_vehiculo: Optional[str] = None
     solicitudes_especiales: Optional[str] = None
+    motivo_cancelacion: Optional[str] = None
     creado_en: datetime
     actualizado_en: datetime
     huesped: Optional[HuespedResponse] = None
@@ -68,6 +66,10 @@ class ReservaResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class CancelarReserva(BaseModel):
+    motivo: Optional[str] = Field(default=None, max_length=500)
 
 
 class ReservaListaResponse(BaseModel):
@@ -84,6 +86,14 @@ class ReservaListaResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ReservasPaginadasResponse(BaseModel):
+    items: list[ReservaListaResponse]
+    total: int
+    page: int
+    pages: int
+    per_page: int
 
 
 class DisponibilidadRequest(BaseModel):

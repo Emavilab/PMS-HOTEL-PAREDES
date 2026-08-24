@@ -14,7 +14,7 @@ from app.modules.huespedes.router import router as huespedes_router
 from app.modules.reservas.router import router as reservas_router, router_disponibilidad
 from app.modules.estadias.router import router as estadias_router
 from app.modules.limpieza.router import router as limpieza_router
-from app.modules.facturacion.router import router as facturacion_router
+from app.modules.facturacion.router import router as facturacion_router, router_facturas
 from app.modules.caja.router import router as caja_router
 from app.modules.reportes.router import router as reportes_router
 from app.modules.auditoria.router import router as auditoria_router
@@ -44,6 +44,7 @@ app.include_router(router_disponibilidad)
 app.include_router(estadias_router)
 app.include_router(limpieza_router)
 app.include_router(facturacion_router)
+app.include_router(router_facturas)
 app.include_router(caja_router)
 app.include_router(reportes_router)
 app.include_router(auditoria_router)
@@ -68,6 +69,8 @@ def agregar_columnas_reserva_si_faltan():
         alteraciones.append("ALTER TABLE reservas ADD COLUMN tiene_vehiculo BOOLEAN NOT NULL DEFAULT 0")
     if "detalle_vehiculo" not in columnas:
         alteraciones.append("ALTER TABLE reservas ADD COLUMN detalle_vehiculo TEXT")
+    if "motivo_cancelacion" not in columnas:
+        alteraciones.append("ALTER TABLE reservas ADD COLUMN motivo_cancelacion TEXT")
 
     if not alteraciones:
         return

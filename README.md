@@ -23,6 +23,8 @@ Property Management System para hoteles pequeños y medianos.
 
 ## Inicio rápido (desarrollo)
 
+En desarrollo usa servidores con recarga automática. Así los cambios de frontend y backend se aplican sin apagar ni volver a levantar manualmente.
+
 ### 1. Base de datos
 
 ```bash
@@ -37,6 +39,8 @@ pip install .
 uvicorn app.main:app --reload --port 8000
 ```
 
+El flag `--reload` reinicia automáticamente FastAPI cuando cambias archivos `.py`.
+
 Poblar datos de demostración:
 
 ```bash
@@ -50,6 +54,8 @@ cd frontend
 npm install
 npm run dev
 ```
+
+`npm run dev` usa el servidor de desarrollo de Next.js con hot reload. No uses `npm run build` + `npm start` mientras estás programando.
 
 ### 4. Acceder
 
@@ -70,6 +76,26 @@ npm run dev
 ```bash
 docker compose -f infrastructure/docker-compose.yml up -d
 ```
+
+## Docker Compose (desarrollo con hot reload)
+
+Si trabajas con Docker y quieres ver cambios sin reconstruir ni reiniciar manualmente:
+
+```bash
+docker compose -f infrastructure/docker-compose.dev.yml up
+```
+
+Este compose monta el código como volumen y ejecuta:
+
+- Backend: `uvicorn app.main:app --reload`
+- Frontend: `npm run dev`
+
+Casos donde sí conviene reiniciar:
+
+- Cambias variables de entorno.
+- Instalas dependencias nuevas.
+- Cambias configuración de Docker.
+- Hay migraciones o cambios grandes de base de datos.
 
 ## Estructura del proyecto
 

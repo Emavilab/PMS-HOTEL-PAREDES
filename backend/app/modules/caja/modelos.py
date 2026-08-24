@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import Column, String, Float, DateTime, ForeignKey
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
 
@@ -19,3 +19,9 @@ class SesionCaja(Base):
     )
     cerrada_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     estado: Mapped[str] = mapped_column(String(50), nullable=False, default="ABIERTA")
+
+    usuario = relationship("Usuario")
+
+    @property
+    def nombre_usuario(self) -> str | None:
+        return self.usuario.nombre_completo if self.usuario else None

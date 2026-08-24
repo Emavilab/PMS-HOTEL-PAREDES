@@ -23,10 +23,12 @@ const badgeVariants = cva(
 
 export interface BadgeProps
   extends React.HTMLAttributes<HTMLDivElement>,
-    VariantProps<typeof badgeVariants> {}
+    VariantProps<typeof badgeVariants> {
+  label?: string
+}
 
-function Badge({ className, variant, ...props }: BadgeProps) {
-  return <div className={cn(badgeVariants({ variant }), className)} {...props} />
+function Badge({ className, variant, label, children, ...props }: BadgeProps) {
+  return <div className={cn(badgeVariants({ variant }), className)} {...props}>{children || label}</div>
 }
 
 export { Badge, badgeVariants }
@@ -53,6 +55,7 @@ export function statusBadge(status: string) {
     activo: { variant: "success", label: "Activo" },
     inactivo: { variant: "danger", label: "Inactivo" },
   }
-  const config = map[status] || { variant: "default" as const, label: status }
+  const key = map[status] ? status : status.toLowerCase()
+  const config = map[key] || { variant: "default" as const, label: status }
   return { variant: config.variant, label: config.label }
 }

@@ -57,6 +57,7 @@ export const api = {
     actualizar: (id: string, datos: any) =>
       peticion<any>(`/usuarios/${id}`, { method: "PUT", body: JSON.stringify(datos) }),
     obtener: (id: string) => peticion<any>(`/usuarios/${id}`),
+    eliminar: (id: string) => peticion<void>(`/usuarios/${id}`, { method: "DELETE" }),
   },
   tiposHabitacion: {
     listar: () => peticion<any[]>("/tipos-habitacion"),
@@ -64,36 +65,48 @@ export const api = {
       peticion<any>("/tipos-habitacion", { method: "POST", body: JSON.stringify(datos) }),
     actualizar: (id: string, datos: any) =>
       peticion<any>(`/tipos-habitacion/${id}`, { method: "PUT", body: JSON.stringify(datos) }),
+    eliminar: (id: string) => peticion<void>(`/tipos-habitacion/${id}`, { method: "DELETE" }),
   },
   habitaciones: {
     listar: () => peticion<any[]>("/habitaciones"),
     crear: (datos: any) =>
       peticion<any>("/habitaciones", { method: "POST", body: JSON.stringify(datos) }),
+    actualizar: (id: string, datos: any) =>
+      peticion<any>(`/habitaciones/${id}`, { method: "PUT", body: JSON.stringify(datos) }),
     actualizarEstado: (id: string, datos: any) =>
       peticion<any>(`/habitaciones/${id}/estado`, { method: "PATCH", body: JSON.stringify(datos) }),
+    eliminar: (id: string) => peticion<void>(`/habitaciones/${id}`, { method: "DELETE" }),
   },
   huespedes: {
     listar: (busqueda?: string) =>
-      peticion<any[]>(`/huespedes${busqueda ? `?search=${busqueda}` : ""}`),
+      peticion<any[]>(`/huespedes${busqueda ? `?busqueda=${encodeURIComponent(busqueda)}` : ""}`),
     crear: (datos: any) =>
       peticion<any>("/huespedes", { method: "POST", body: JSON.stringify(datos) }),
     obtener: (id: string) => peticion<any>(`/huespedes/${id}`),
     actualizar: (id: string, datos: any) =>
       peticion<any>(`/huespedes/${id}`, { method: "PUT", body: JSON.stringify(datos) }),
-    historial: (id: string) => peticion<any[]>(`/huespedes/${id}/historial`),
+    eliminar: (id: string) => peticion<void>(`/huespedes/${id}`, { method: "DELETE" }),
+    historial: (id: string) => peticion<any>(`/huespedes/${id}/historial`),
   },
   reservas: {
     listar: (params?: Record<string, string>) => {
       const qs = params ? "?" + new URLSearchParams(params).toString() : ""
-      return peticion<any[]>(`/reservas${qs}`)
+      return peticion<any>(`/reservas${qs}`)
     },
     crear: (datos: any) =>
       peticion<any>("/reservas", { method: "POST", body: JSON.stringify(datos) }),
     obtener: (id: string) => peticion<any>(`/reservas/${id}`),
     actualizar: (id: string, datos: any) =>
       peticion<any>(`/reservas/${id}`, { method: "PUT", body: JSON.stringify(datos) }),
-    cancelar: (id: string) =>
-      peticion<any>(`/reservas/${id}/cancelar`, { method: "POST" }),
+    cancelar: (id: string, motivo?: string) =>
+      peticion<any>(`/reservas/${id}/cancelar`, {
+        method: "POST",
+        body: JSON.stringify({ motivo: motivo || null }),
+      }),
+    confirmar: (id: string) =>
+      peticion<any>(`/reservas/${id}/confirmar`, { method: "POST" }),
+    noShow: (id: string) =>
+      peticion<any>(`/reservas/${id}/no-show`, { method: "POST" }),
     eliminar: (id: string) =>
       peticion<void>(`/reservas/${id}`, { method: "DELETE" }),
     checkIn: (id: string, habitacionId: string) =>
@@ -120,6 +133,10 @@ export const api = {
       peticion<any>("/tareas-limpieza", { method: "POST", body: JSON.stringify(datos) }),
     actualizar: (id: string, datos: any) =>
       peticion<any>(`/tareas-limpieza/${id}`, { method: "PATCH", body: JSON.stringify(datos) }),
+  },
+  facturas: {
+    listar: () => peticion<any[]>("/facturas"),
+    obtener: (id: string) => peticion<any>(`/facturas/${id}`),
   },
   facturacion: {
     agregarCargo: (reservaId: string, datos: any) =>
@@ -150,14 +167,18 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ monto_declarado: montoDeclarado }),
       }),
-    listar: () => peticion<any[]>("/sesiones-caja"),
+    listar: (params?: Record<string, string>) => {
+      const qs = params ? "?" + new URLSearchParams(params).toString() : ""
+      return peticion<any>(`/sesiones-caja${qs}`)
+    },
     activa: () => peticion<any>("/sesiones-caja/activa"),
+    resumen: (id: string) => peticion<any>(`/sesiones-caja/${id}/resumen`),
   },
   reportes: {
     ocupacion: (fechaInicio: string, fechaFin: string) =>
-      peticion<any[]>(`/reportes/ocupacion?start_date=${fechaInicio}&end_date=${fechaFin}`),
+      peticion<any[]>(`/reportes/ocupacion?desde=${fechaInicio}&hasta=${fechaFin}`),
     ingresos: (fechaInicio: string, fechaFin: string) =>
-      peticion<any[]>(`/reportes/ingresos?start_date=${fechaInicio}&end_date=${fechaFin}`),
+      peticion<any>(`/reportes/ingresos?desde=${fechaInicio}&hasta=${fechaFin}`),
     llegadas: () => peticion<any[]>("/reportes/llegadas"),
     salidas: () => peticion<any[]>("/reportes/salidas"),
   },

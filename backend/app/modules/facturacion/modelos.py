@@ -47,3 +47,20 @@ class Pago(Base):
     )
 
     reserva = relationship("Reserva", back_populates="pagos")
+
+
+class Factura(Base):
+    __tablename__ = "facturas"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    reserva_id: Mapped[str] = mapped_column(
+        String, ForeignKey("reservas.id"), nullable=False, index=True
+    )
+    numero: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    fecha_emision: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    datos: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    creado_en: Mapped[datetime] = mapped_column(
+        "created_at", DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )

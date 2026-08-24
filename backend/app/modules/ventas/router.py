@@ -1,5 +1,6 @@
 from datetime import date, datetime, timezone
 from typing import Optional
+import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -13,7 +14,7 @@ from app.modules.ventas.esquemas import (
     ConsumoCrear, ConsumoResponse, VerificacionSalidaResponse,
 )
 from app.modules.reservas.modelos import Reserva
-from app.modules.facturacion.modelos import Pago
+from app.modules.facturacion.modelos import Pago, Factura
 from app.modules.estadias.modelos import Estadia
 from app.modules.habitaciones.modelos import Habitacion
 from app.modules.usuarios.modelos import Usuario
@@ -316,11 +317,14 @@ def culminar_salida(
     consumos_pendientes = db.query(Consumo).filter(
         Consumo.reserva_id == reserva_id, Consumo.pagado == False
     ).all()
+    consumos = db.query(Consumo).filter(Consumo.reserva_id == reserva_id).all()
+    consumos_pagados_previamente = sum(c.total for c in consumos if c.pagado)
 
     for c in consumos_pendientes:
         c.pagado = True
 
     total_consumos_pendientes = sum(c.total for c in consumos_pendientes)
+    total_consumos = sum(c.total for c in consumos)
 
     hoy = date.today()
     noches = (reserva.fecha_salida - reserva.fecha_entrada).days
@@ -334,6 +338,7 @@ def culminar_salida(
     ).scalar() or 0
 
     saldo = (reserva.total or 0) + total_consumos_pendientes + mora - float(total_pagado)
+    pago_checkout = None
     if saldo > 0:
         pago = Pago(
             reserva_id=reserva_id,
@@ -343,6 +348,7 @@ def culminar_salida(
             recibido_por=usuario_actual.id,
         )
         db.add(pago)
+        pago_checkout = pago
 
     reserva.estado = "CHECKED_OUT"
 
@@ -359,5 +365,95 @@ def culminar_salida(
         estadia.estado = "COMPLETADA"
 
     db.commit()
+    if pago_checkout:
+        db.refresh(pago_checkout)
 
-    return {"mensaje": "Salida culminada exitosamente", "total_cobrado": float(saldo)}
+    pagos = db.query(Pago).filter(Pago.reserva_id == reserva_id).order_by(Pago.pagado_en).all()
+    total_pagado = sum(p.monto for p in pagos)
+    total_factura = (reserva.total or 0) + total_consumos + mora
+    total_cubierto = float(total_pagado) + float(consumos_pagados_previamente)
+    saldo_final = total_factura - total_cubierto
+    if saldo_final < 0:
+        saldo_final = 0
+
+    huesped = reserva.huesped
+    habitacion = reserva.habitacion_ref
+    precio_noche = round((reserva.subtotal or 0) / noches, 2) if noches > 0 else 0
+    factura = {
+        "numero": f"FAC-{reserva.codigo_confirmacion}",
+        "fecha": datetime.now(timezone.utc).isoformat(),
+        "reserva_id": reserva.id,
+        "codigo_confirmacion": reserva.codigo_confirmacion,
+        "huesped_nombre": f"{huesped.nombres} {huesped.apellidos}" if huesped else "N/A",
+        "huesped_documento": huesped.numero_documento if huesped else None,
+        "habitacion_numero": habitacion.numero if habitacion else None,
+        "habitacion_tipo": habitacion.tipo_habitacion.nombre if habitacion and habitacion.tipo_habitacion else None,
+        "fecha_entrada": str(reserva.fecha_entrada),
+        "fecha_salida": str(reserva.fecha_salida),
+        "noches": noches,
+        "items": [
+            {
+                "descripcion": f"Hospedaje habitacion {habitacion.numero if habitacion else ''}{f' ({habitacion.tipo_habitacion.nombre})' if habitacion and habitacion.tipo_habitacion else ''}",
+                "cantidad": noches,
+                "precio_unitario": float(precio_noche),
+                "total": float(reserva.subtotal or 0),
+            },
+            *[
+                {
+                    "descripcion": f"{c.producto.nombre if c.producto else 'Consumo'} x{c.cantidad}",
+                    "cantidad": c.cantidad,
+                    "precio_unitario": float(c.precio_unitario),
+                    "total": float(c.total),
+                }
+                for c in consumos
+            ],
+            *([
+                {
+                    "descripcion": "Mora/Penalidad por salida tardia",
+                    "cantidad": 1,
+                    "precio_unitario": float(mora),
+                    "total": float(mora),
+                }
+            ] if mora > 0 else []),
+        ],
+        "resumen": {
+            "subtotal_habitacion": float(reserva.subtotal or 0),
+            "descuento": float(reserva.descuento or 0),
+            "impuesto": float(reserva.impuesto or 0),
+            "total_habitacion": float(reserva.total or 0),
+            "total_consumos": float(total_consumos),
+            "consumos_pagados_previamente": float(consumos_pagados_previamente),
+            "mora_penalidad": float(mora),
+            "total_factura": float(total_factura),
+            "total_pagado": float(total_pagado),
+            "total_cobrado_checkout": float(saldo if saldo > 0 else 0),
+            "saldo": float(saldo_final),
+        },
+        "pagos": [
+            {
+                "id": p.id,
+                "monto": float(p.monto),
+                "metodo_pago": p.metodo_pago,
+                "referencia": p.referencia,
+                "pagado_en": p.pagado_en.isoformat() if p.pagado_en else None,
+            }
+            for p in pagos
+        ],
+    }
+
+    factura_db = Factura(
+        reserva_id=reserva_id,
+        numero=factura["numero"],
+        fecha_emision=datetime.now(timezone.utc),
+        datos=json.dumps(factura, default=str),
+    )
+    db.add(factura_db)
+    db.commit()
+    db.refresh(factura_db)
+    factura["id"] = factura_db.id
+
+    return {
+        "mensaje": "Salida culminada exitosamente",
+        "total_cobrado": float(saldo if saldo > 0 else 0),
+        "factura": factura,
+    }

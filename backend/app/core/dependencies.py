@@ -16,3 +16,8 @@ def PersonalUsuario(usuario_actual=Depends(obtener_usuario_actual)):
     if usuario_actual.rol not in ["admin", "gerente", "recepcionista"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permisos")
     return usuario_actual
+
+def LimpiezaUsuario(usuario_actual=Depends(obtener_usuario_actual)):
+    if usuario_actual.rol not in ["admin", "gerente", "recepcionista", "limpieza"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permisos")
+    return usuario_actual

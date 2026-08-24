@@ -3,11 +3,11 @@ import string
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import and_, or_, func
 
 from app.core.database import get_db
-from app.core.dependencies import PersonalUsuario
+from app.core.dependencies import AdminUsuario, PersonalUsuario
 from app.common.auditoria import crear_registro_auditoria
 from app.modules.reservas.modelos import Reserva
 from app.modules.estadias.modelos import Estadia
@@ -20,8 +20,11 @@ from app.modules.reservas.esquemas import (
     ReservaListaResponse,
     DisponibilidadRequest,
     DisponibilidadResponse,
+    CancelarReserva,
+    ReservasPaginadasResponse,
 )
 from app.modules.habitaciones.modelos import TipoHabitacion, Habitacion
+from app.modules.configuracion.modelos import HotelConfig
 from app.modules.usuarios.modelos import Usuario
 
 router = APIRouter(prefix="/reservas", tags=["Reservas"])
@@ -57,16 +60,82 @@ def _tiene_conflicto(
     return consulta.first() is not None
 
 
-@router.get("", response_model=list[ReservaListaResponse])
+def _habitaciones_disponibles_tipo(
+    db: Session,
+    fecha_entrada: date,
+    fecha_salida: date,
+    tipo_habitacion_id: str,
+) -> int:
+    total = db.query(Habitacion).filter(
+        Habitacion.tipo_habitacion_id == tipo_habitacion_id,
+        Habitacion.estado_operativo == "DISPONIBLE",
+    ).count()
+
+    ocupadas = (
+        db.query(Reserva.habitacion_id)
+        .join(Habitacion, Reserva.habitacion_id == Habitacion.id)
+        .filter(
+            Reserva.estado.in_(ESTADOS_OCUPAN_INVENTARIO),
+            Reserva.fecha_entrada < fecha_salida,
+            Reserva.fecha_salida > fecha_entrada,
+            Reserva.habitacion_id.isnot(None),
+            Habitacion.tipo_habitacion_id == tipo_habitacion_id,
+        )
+        .all()
+    )
+
+    sin_asignar = db.query(func.count(Reserva.id)).filter(
+        Reserva.estado.in_(ESTADOS_OCUPAN_INVENTARIO),
+        Reserva.fecha_entrada < fecha_salida,
+        Reserva.fecha_salida > fecha_entrada,
+        Reserva.habitacion_id.is_(None),
+        Reserva.tipo_habitacion_id == tipo_habitacion_id,
+    ).scalar() or 0
+
+    return max(0, total - len({r[0] for r in ocupadas}) - int(sin_asignar))
+
+
+def _recalcular_totales(db: Session, reserva: Reserva):
+    tipo = (
+        db.query(TipoHabitacion).filter(TipoHabitacion.id == reserva.tipo_habitacion_id).first()
+        if reserva.tipo_habitacion_id else None
+    )
+    precio_base = tipo.precio_base if tipo else 0
+    noches = max((reserva.fecha_salida - reserva.fecha_entrada).days, 0)
+
+    config = db.query(HotelConfig).first()
+    tasa = ((config.impuesto if config else 15.0) or 15.0) / 100
+
+    cargos = db.query(func.coalesce(func.sum(Cargo.total), 0)).filter(
+        Cargo.reserva_id == reserva.id
+    ).scalar() or 0
+
+    descuento = min(reserva.descuento or 0, precio_base * noches + float(cargos))
+    subtotal_habitacion = round(precio_base * noches, 2)
+    impuesto = round(subtotal_habitacion * tasa, 2)
+
+    reserva.subtotal = round(subtotal_habitacion + float(cargos), 2)
+    reserva.impuesto = impuesto
+    reserva.descuento = round(descuento, 2)
+    reserva.total = max(round(subtotal_habitacion + float(cargos) + impuesto - descuento, 2), 0)
+
+
+@router.get("", response_model=ReservasPaginadasResponse)
 def listar_reservas(
     estado: str | None = Query(None),
     fecha_desde: date | None = Query(None),
     fecha_hasta: date | None = Query(None),
     huesped_id: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
     _: Usuario = Depends(PersonalUsuario),
 ):
-    consulta = db.query(Reserva)
+    consulta = db.query(Reserva).options(
+        joinedload(Reserva.huesped),
+        joinedload(Reserva.habitacion_ref),
+        joinedload(Reserva.tipo_habitacion_ref),
+    )
     if estado:
         consulta = consulta.filter(Reserva.estado == estado)
     if fecha_desde:
@@ -76,13 +145,19 @@ def listar_reservas(
     if huesped_id:
         consulta = consulta.filter(Reserva.huesped_id == huesped_id)
 
-    reservas = consulta.order_by(Reserva.fecha_entrada.desc()).all()
+    total = consulta.count()
+    reservas = (
+        consulta
+        .order_by(Reserva.fecha_entrada.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
+
     resultado = []
     for r in reservas:
-        nombre = None
-        if r.huesped:
-            nombre = f"{r.huesped.nombres} {r.huesped.apellidos}"
-        item = ReservaListaResponse(
+        nombre = f"{r.huesped.nombres} {r.huesped.apellidos}" if r.huesped else None
+        resultado.append(ReservaListaResponse(
             id=r.id,
             codigo_confirmacion=r.codigo_confirmacion,
             huesped_nombre=nombre,
@@ -93,9 +168,15 @@ def listar_reservas(
             estado=r.estado,
             total=r.total,
             creado_en=r.creado_en,
-        )
-        resultado.append(item)
-    return resultado
+        ))
+
+    return ReservasPaginadasResponse(
+        items=resultado,
+        total=total,
+        page=page,
+        pages=(total + per_page - 1) // per_page,
+        per_page=per_page,
+    )
 
 
 @router.post("", response_model=ReservaResponse, status_code=status.HTTP_201_CREATED)
@@ -145,11 +226,22 @@ def crear_reserva(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="La habitacion no esta disponible en las fechas seleccionadas",
             )
+    elif datos.tipo_habitacion_id:
+        disponibles = _habitaciones_disponibles_tipo(
+            db, datos.fecha_entrada, datos.fecha_salida, datos.tipo_habitacion_id
+        )
+        if disponibles <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="No hay habitaciones disponibles de ese tipo en las fechas seleccionadas",
+            )
 
     precio_base = tipo_habitacion.precio_base if tipo_habitacion else 0
     noches = (datos.fecha_salida - datos.fecha_entrada).days
     subtotal = precio_base * noches
-    impuesto = round(subtotal * 0.15, 2)
+    config = db.query(HotelConfig).first()
+    porcentaje_impuesto = (config.impuesto if config else 15.0) / 100
+    impuesto = round(subtotal * porcentaje_impuesto, 2)
     descuento = datos.descuento or 0
     total = subtotal + impuesto - descuento
     if total < 0:
@@ -242,6 +334,13 @@ def actualizar_reserva(
         )
 
     nueva_habitacion_id = datos.habitacion_id or reserva.habitacion_id
+
+    if "estado" in datos_actualizar and datos.estado != reserva.estado:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El estado no se cambia por esta via. Usa confirmar, no-show, cancelar o check-in.",
+        )
+
     if datos.estado == "CHECKED_IN" and reserva.estado != "CHECKED_IN":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -265,6 +364,10 @@ def actualizar_reserva(
     for campo, valor in datos_actualizar.items():
         setattr(reserva, campo, valor)
 
+    campos_que_afectan_precio = {"fecha_entrada", "fecha_salida", "descuento", "tipo_habitacion_id"}
+    if campos_que_afectan_precio & set(datos_actualizar.keys()):
+        _recalcular_totales(db, reserva)
+
     db.commit()
     db.refresh(reserva)
 
@@ -287,8 +390,8 @@ def actualizar_reserva(
     return ReservaResponse.model_validate(reserva)
 
 
-@router.post("/{reserva_id}/cancelar", response_model=ReservaResponse)
-def cancelar_reserva(
+@router.post("/{reserva_id}/confirmar", response_model=ReservaResponse)
+def confirmar_reserva(
     reserva_id: str,
     request: Request,
     db: Session = Depends(get_db),
@@ -300,13 +403,93 @@ def cancelar_reserva(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Reserva no encontrada",
         )
-    if reserva.estado in ("CANCELADA", "CHECKED_OUT", "NO_SHOW"):
+    if reserva.estado != "PENDIENTE":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"No se puede cancelar una reserva en estado {reserva.estado}",
+            detail=f"Solo se pueden confirmar reservas pendientes. Estado actual: {reserva.estado}",
         )
 
+    estado_anterior = reserva.estado
+    reserva.estado = "CONFIRMADA"
+    db.commit()
+    db.refresh(reserva)
+
+    crear_registro_auditoria(
+        db=db,
+        usuario_id=usuario_actual.id,
+        accion="CONFIRMAR",
+        tipo_entidad="Reserva",
+        entidad_id=reserva.id,
+        valores_anteriores={"estado": estado_anterior},
+        valores_nuevos={"estado": "CONFIRMADA"},
+        direccion_ip=request.client.host if request.client else None,
+    )
+
+    return ReservaResponse.model_validate(reserva)
+
+
+@router.post("/{reserva_id}/no-show", response_model=ReservaResponse)
+def marcar_no_show(
+    reserva_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario_actual: Usuario = Depends(PersonalUsuario),
+):
+    reserva = db.query(Reserva).filter(Reserva.id == reserva_id).first()
+    if not reserva:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Reserva no encontrada",
+        )
+    if reserva.estado not in ("PENDIENTE", "CONFIRMADA"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Solo se puede marcar NO_SHOW en reservas pendientes o confirmadas. Estado actual: {reserva.estado}",
+        )
+
+    estado_anterior = reserva.estado
+    reserva.estado = "NO_SHOW"
+    db.commit()
+    db.refresh(reserva)
+
+    crear_registro_auditoria(
+        db=db,
+        usuario_id=usuario_actual.id,
+        accion="NO_SHOW",
+        tipo_entidad="Reserva",
+        entidad_id=reserva.id,
+        valores_anteriores={"estado": estado_anterior},
+        valores_nuevos={"estado": "NO_SHOW"},
+        direccion_ip=request.client.host if request.client else None,
+    )
+
+    return ReservaResponse.model_validate(reserva)
+
+
+@router.post("/{reserva_id}/cancelar", response_model=ReservaResponse)
+def cancelar_reserva(
+    reserva_id: str,
+    request: Request,
+    datos: CancelarReserva | None = None,
+    db: Session = Depends(get_db),
+    usuario_actual: Usuario = Depends(PersonalUsuario),
+):
+    reserva = db.query(Reserva).filter(Reserva.id == reserva_id).first()
+    if not reserva:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Reserva no encontrada",
+        )
+    if reserva.estado not in ("PENDIENTE", "CONFIRMADA"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Solo se pueden cancelar reservas pendientes o confirmadas. Estado actual: {reserva.estado}",
+        )
+
+    valores_anteriores_estado = reserva.estado
+    motivo = (datos.motivo or "").strip() if datos else ""
     reserva.estado = "CANCELADA"
+    reserva.motivo_cancelacion = motivo or None
     db.commit()
     db.refresh(reserva)
 
@@ -316,8 +499,8 @@ def cancelar_reserva(
         accion="CANCELAR",
         tipo_entidad="Reserva",
         entidad_id=reserva.id,
-        valores_anteriores={"estado": "ACTIVA"},
-        valores_nuevos={"estado": "CANCELADA"},
+        valores_anteriores={"estado": valores_anteriores_estado},
+        valores_nuevos={"estado": "CANCELADA", "motivo": motivo or None},
         direccion_ip=request.client.host if request.client else None,
     )
 
@@ -329,7 +512,7 @@ def eliminar_reserva(
     reserva_id: str,
     request: Request,
     db: Session = Depends(get_db),
-    usuario_actual: Usuario = Depends(PersonalUsuario),
+    usuario_actual: Usuario = Depends(AdminUsuario),
 ):
     reserva = db.query(Reserva).filter(Reserva.id == reserva_id).first()
     if not reserva:
@@ -341,6 +524,13 @@ def eliminar_reserva(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No se puede eliminar una reserva con hospedaje activo",
+        )
+
+    pagos = db.query(Pago).filter(Pago.reserva_id == reserva_id).count()
+    if pagos:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No se puede eliminar una reserva con pagos registrados. Cancelala en su lugar.",
         )
 
     valores_anteriores = {

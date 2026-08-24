@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 
@@ -33,7 +34,8 @@ def crear_usuario(
     db: Session = Depends(get_db),
     usuario_actual: Usuario = Depends(AdminUsuario),
 ):
-    existe = db.query(Usuario).filter(Usuario.email == datos.email).first()
+    email = str(datos.email).lower()
+    existe = db.query(Usuario).filter(Usuario.email == email).first()
     if existe:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -41,7 +43,7 @@ def crear_usuario(
         )
 
     usuario = Usuario(
-        email=datos.email,
+        email=email,
         contrasena=pwd_context.hash(datos.contrasena),
         nombre_completo=datos.nombre_completo,
         telefono=datos.telefono,
@@ -57,7 +59,7 @@ def crear_usuario(
         accion="CREAR",
         tipo_entidad="Usuario",
         entidad_id=usuario.id,
-        valores_nuevos={"email": datos.email, "rol": datos.rol},
+        valores_nuevos={"email": email, "rol": datos.rol},
         direccion_ip=request.client.host if request.client else None,
     )
 
@@ -101,10 +103,13 @@ def actualizar_usuario(
         "estado": usuario.estado,
     }
 
-    if datos.email is not None:
+    datos_actualizar = datos.model_dump(exclude_unset=True)
+
+    if "email" in datos_actualizar:
+        nuevo_email = str(datos.email).lower()
         existe = (
             db.query(Usuario)
-            .filter(Usuario.email == datos.email, Usuario.id != usuario_id)
+            .filter(Usuario.email == nuevo_email, Usuario.id != usuario_id)
             .first()
         )
         if existe:
@@ -112,16 +117,21 @@ def actualizar_usuario(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="El email ya esta registrado",
             )
-        usuario.email = datos.email
-    if datos.contrasena is not None:
+        usuario.email = nuevo_email
+    if "contrasena" in datos_actualizar:
         usuario.contrasena = pwd_context.hash(datos.contrasena)
-    if datos.nombre_completo is not None:
+    if "nombre_completo" in datos_actualizar:
         usuario.nombre_completo = datos.nombre_completo
-    if datos.telefono is not None:
+    if "telefono" in datos_actualizar:
         usuario.telefono = datos.telefono
-    if datos.rol is not None:
+    if "rol" in datos_actualizar:
         usuario.rol = datos.rol
-    if datos.estado is not None:
+    if "estado" in datos_actualizar:
+        if usuario.id == usuario_actual.id and datos.estado != "activo":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No puedes desactivar tu propio usuario",
+            )
         usuario.estado = datos.estado
 
     db.commit()
@@ -144,3 +154,54 @@ def actualizar_usuario(
     )
 
     return UsuarioResponse.model_validate(usuario)
+
+
+@router.delete("/{usuario_id}", status_code=status.HTTP_204_NO_CONTENT)
+def eliminar_usuario(
+    usuario_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario_actual: Usuario = Depends(AdminUsuario),
+):
+    usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
+    if not usuario:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Usuario no encontrado",
+        )
+    if usuario.id == usuario_actual.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No puedes eliminar tu propio usuario",
+        )
+    if usuario.es_superadmin:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No se puede eliminar un superadministrador",
+        )
+
+    valores_anteriores = {
+        "email": usuario.email,
+        "nombre_completo": usuario.nombre_completo,
+        "rol": usuario.rol,
+        "estado": usuario.estado,
+    }
+    db.delete(usuario)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No se puede eliminar un usuario con movimientos asociados. Desactivalo cambiando su estado a inactivo.",
+        )
+
+    crear_registro_auditoria(
+        db=db,
+        usuario_id=usuario_actual.id,
+        accion="ELIMINAR",
+        tipo_entidad="Usuario",
+        entidad_id=usuario_id,
+        valores_anteriores=valores_anteriores,
+        direccion_ip=request.client.host if request.client else None,
+    )

@@ -104,6 +104,13 @@ export default function RecepcionPage() {
   const matchingRooms = accion?.tipo === "checkin" && accion.reserva.tipo_habitacion_id
     ? rentableRooms.filter((r) => r.tipo_habitacion_id === accion.reserva.tipo_habitacion_id)
     : []
+  const roomsByFloor = rooms.reduce<Record<string, any[]>>((acc, room) => {
+    const floor = room.piso || "Sin piso"
+    if (!acc[floor]) acc[floor] = []
+    acc[floor].push(room)
+    return acc
+  }, {})
+  const floors = Object.entries(roomsByFloor).sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
 
   async function handleSearch() {
     if (!search.trim()) return
@@ -125,6 +132,23 @@ export default function RecepcionPage() {
       setError(`La habitación ${room.numero} no se puede rentar porque está en estado de limpieza: ${statusBadge(room.estado_limpieza).label}`)
     } else if (room.estado_operativo === "OCUPADA") {
       setOccupiedRoom(room)
+    }
+  }
+
+  function roomCardClass(room: any) {
+    if (room.estado_limpieza === "EN_PROGRESO") return "border-blue-200 bg-blue-50 text-blue-900 cursor-not-allowed"
+    if (room.estado_operativo === "DISPONIBLE" && room.estado_limpieza === "LIMPIA") return "border-green-200 bg-green-50 text-green-900 cursor-pointer hover:-translate-y-0.5 hover:bg-green-100 hover:shadow-md"
+    if (room.estado_operativo === "DISPONIBLE" && room.estado_limpieza === "SUCIA") return "border-gray-300 bg-gray-100 text-gray-700 cursor-not-allowed"
+    if (room.estado_operativo === "OCUPADA") return "border-yellow-200 bg-yellow-50 text-yellow-900 cursor-pointer hover:-translate-y-0.5 hover:bg-yellow-100 hover:shadow-md"
+    return "border-red-200 bg-red-50 text-red-900 cursor-default"
+  }
+
+  function floorStats(floorRooms: any[]) {
+    return {
+      total: floorRooms.length,
+      rentables: floorRooms.filter((room) => room.estado_operativo === "DISPONIBLE" && room.estado_limpieza === "LIMPIA").length,
+      ocupadas: floorRooms.filter((room) => room.estado_operativo === "OCUPADA").length,
+      bloqueadas: floorRooms.filter((room) => room.estado_limpieza !== "LIMPIA" || !["DISPONIBLE", "OCUPADA"].includes(room.estado_operativo)).length,
     }
   }
 
@@ -360,38 +384,49 @@ export default function RecepcionPage() {
               Hay {cleaningRooms.length} habitación{cleaningRooms.length !== 1 ? "es" : ""} en limpieza; estarán bloqueadas para renta hasta finalizar limpieza.
             </div>
           )}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-            {rooms.map((room) => (
-              <div
-                key={room.id}
-                onClick={() => handleRoomClick(room)}
-                className={`relative rounded-xl border p-3 text-center shadow-sm transition ${
-                  room.estado_limpieza === "EN_PROGRESO"
-                    ? "border-blue-200 bg-blue-50 text-blue-900 cursor-not-allowed"
-                  : room.estado_operativo === "DISPONIBLE" && room.estado_limpieza === "LIMPIA"
-                    ? "border-green-200 bg-green-50 text-green-900 cursor-pointer hover:-translate-y-0.5 hover:bg-green-100 hover:shadow-md"
-                  : room.estado_operativo === "DISPONIBLE" && room.estado_limpieza === "SUCIA"
-                    ? "border-gray-300 bg-gray-100 text-gray-700 cursor-not-allowed"
-                  : room.estado_operativo === "OCUPADA"
-                    ? "border-yellow-200 bg-yellow-50 text-yellow-900 cursor-pointer hover:-translate-y-0.5 hover:bg-yellow-100 hover:shadow-md"
-                    : "border-red-200 bg-red-50 text-red-900 cursor-default"
-                }`}
-              >
-                <p className="text-xs font-medium uppercase tracking-wide opacity-70">Hab.</p>
-                <p className="font-bold text-2xl leading-tight">{room.numero}</p>
-                <p className="mt-1 truncate text-xs">{room.tipo_habitacion?.nombre}</p>
-                <p className="mt-2 text-xs font-semibold">{statusBadge(room.estado_operativo).label}</p>
-                <p className="text-[10px] font-medium opacity-75">{statusBadge(room.estado_limpieza).label}</p>
-                <p className="text-[10px] mt-0.5 opacity-60">
-                  {room.tipo_habitacion ? formatCurrency(room.tipo_habitacion.precio_base) + "/noche" : ""}
-                </p>
-                <div className={`absolute right-2 top-2 h-2.5 w-2.5 rounded-full ring-2 ring-white ${
-                  room.estado_limpieza === "LIMPIA" ? "bg-green-500" :
-                  room.estado_limpieza === "SUCIA" ? "bg-red-500" :
-                  room.estado_limpieza === "EN_PROGRESO" ? "bg-blue-500" : "bg-purple-500"
-                }`} title={`Limpieza: ${room.estado_limpieza}`} />
-              </div>
-            ))}
+          <div className="space-y-5">
+            {floors.map(([floor, floorRooms]) => {
+              const stats = floorStats(floorRooms)
+              return (
+                <section key={floor} className="rounded-2xl border bg-white p-3 shadow-sm sm:p-4">
+                  <div className="mb-3 flex flex-col gap-2 border-b pb-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h3 className="text-base font-semibold text-gray-900">Piso {floor}</h3>
+                      <p className="text-xs text-gray-500">{stats.total} habitacion{stats.total !== 1 ? "es" : ""} registradas en este piso</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      <span className="rounded-full bg-green-100 px-2.5 py-1 font-medium text-green-800">{stats.rentables} disponibles</span>
+                      <span className="rounded-full bg-yellow-100 px-2.5 py-1 font-medium text-yellow-800">{stats.ocupadas} ocupadas</span>
+                      <span className="rounded-full bg-gray-100 px-2.5 py-1 font-medium text-gray-700">{stats.bloqueadas} no rentables</span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+                    {floorRooms.map((room) => (
+                      <div
+                        key={room.id}
+                        onClick={() => handleRoomClick(room)}
+                        className={`relative rounded-xl border p-3 text-center shadow-sm transition ${roomCardClass(room)}`}
+                      >
+                        <p className="text-xs font-medium uppercase tracking-wide opacity-70">Hab.</p>
+                        <p className="font-bold text-2xl leading-tight">{room.numero}</p>
+                        <p className="mt-1 truncate text-xs">{room.tipo_habitacion?.nombre}</p>
+                        <p className="mt-2 text-xs font-semibold">{statusBadge(room.estado_operativo).label}</p>
+                        <p className="text-[10px] font-medium opacity-75">{statusBadge(room.estado_limpieza).label}</p>
+                        <p className="text-[10px] mt-0.5 opacity-60">
+                          {room.tipo_habitacion ? formatCurrency(room.tipo_habitacion.precio_base) + "/noche" : ""}
+                        </p>
+                        <div className={`absolute right-2 top-2 h-2.5 w-2.5 rounded-full ring-2 ring-white ${
+                          room.estado_limpieza === "LIMPIA" ? "bg-green-500" :
+                          room.estado_limpieza === "SUCIA" ? "bg-red-500" :
+                          room.estado_limpieza === "EN_PROGRESO" ? "bg-blue-500" : "bg-purple-500"
+                        }`} title={`Limpieza: ${room.estado_limpieza}`} />
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )
+            })}
+            {rooms.length === 0 && <p className="py-6 text-center text-sm text-gray-500">No hay habitaciones registradas.</p>}
           </div>
         </CardContent>
       </Card>
@@ -738,6 +773,7 @@ function RentarHabitacionDialog({ room, onClose, onCreated }: { room: any | null
   const [tipoRegistro, setTipoRegistro] = useState<"hospedar" | "reserva">("hospedar")
   const [extraDesc, setExtraDesc] = useState("")
   const [extraMonto, setExtraMonto] = useState(0)
+  const [taxRate, setTaxRate] = useState(15)
 
   const [form, setForm] = useState({
     nombres: "", apellidos: "", tipo_documento: "DNI", numero_documento: "",
@@ -750,6 +786,13 @@ function RentarHabitacionDialog({ room, onClose, onCreated }: { room: any | null
     tiene_vehiculo: false,
     detalle_vehiculo: "",
   })
+
+  useEffect(() => {
+    if (!room) return
+    api.configuracion.obtener()
+      .then((config) => setTaxRate(Number(config.impuesto) || 0))
+      .catch(() => setTaxRate(15))
+  }, [room])
 
   useEffect(() => {
     if (room) {
@@ -772,7 +815,7 @@ function RentarHabitacionDialog({ room, onClose, onCreated }: { room: any | null
   const fechaSalida = form.fecha_salida ? new Date(form.fecha_salida + "T12:00:00") : null
   const noches = fechaEntrada && fechaSalida ? Math.max(0, Math.round((fechaSalida.getTime() - fechaEntrada.getTime()) / 86400000)) : 0
   const subtotal = precioNoche * noches
-  const impuesto = Math.round(subtotal * 0.15 * 100) / 100
+  const impuesto = Math.round(subtotal * (taxRate / 100) * 100) / 100
   const descuento = form.descuento || 0
   const extra = extraMonto || 0
   const totalNeto = subtotal + impuesto - descuento + extra
@@ -1161,7 +1204,7 @@ function RentarHabitacionDialog({ room, onClose, onCreated }: { room: any | null
 
           <div className="bg-gray-50 rounded-md p-3 space-y-1 text-sm border">
             <div className="flex justify-between"><span>Subtotal ({noches} noche{noches !== 1 ? "s" : ""})</span><span>{formatCurrency(subtotal)}</span></div>
-            <div className="flex justify-between"><span>Impuesto (15%)</span><span>{formatCurrency(impuesto)}</span></div>
+            <div className="flex justify-between"><span>Impuesto ({taxRate}%)</span><span>{formatCurrency(impuesto)}</span></div>
             {descuento > 0 && <div className="flex justify-between text-red-600"><span>Descuento</span><span>-{formatCurrency(descuento)}</span></div>}
             {extra > 0 && <div className="flex justify-between"><span>Cargo extra: {extraDesc || "—"}</span><span>+{formatCurrency(extra)}</span></div>}
             <div className="flex justify-between font-bold text-base pt-1 border-t mt-1"><span>Total</span><span>{formatCurrency(totalFinal)}</span></div>

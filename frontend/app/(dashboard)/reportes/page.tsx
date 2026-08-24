@@ -6,7 +6,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { formatCurrency, formatDateShort } from "@/lib/utils"
-import { BarChart3 } from "lucide-react"
 
 export default function ReportesPage() {
   const today = new Date().toISOString().split("T")[0]
@@ -15,31 +14,40 @@ export default function ReportesPage() {
   const [startDate, setStartDate] = useState(weekAgo)
   const [endDate, setEndDate] = useState(today)
   const [occupancy, setOccupancy] = useState<any[]>([])
-  const [revenue, setRevenue] = useState<any[]>([])
+  const [revenue, setRevenue] = useState<any | null>(null)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState("")
 
   async function loadReports() {
     setLoading(true)
-    const [occ, rev] = await Promise.all([
-      api.reportes.ocupacion(startDate, endDate),
-      api.reportes.ingresos(startDate, endDate),
-    ])
-    setOccupancy(occ)
-    setRevenue(rev)
-    setLoading(false)
+    setError("")
+    try {
+      const [occ, rev] = await Promise.all([
+        api.reportes.ocupacion(startDate, endDate),
+        api.reportes.ingresos(startDate, endDate),
+      ])
+      setOccupancy(occ)
+      setRevenue(rev)
+    } catch (err: any) {
+      setError(err.message || "Error al cargar reportes")
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => { loadReports() }, [])
 
-  const totalRevenue = revenue.reduce((sum, r) => sum + r.ingresos_totales, 0)
-  const totalPayments = revenue.reduce((sum, r) => sum + r.pagos, 0)
+  const totalRevenue = revenue?.total_ingresos || 0
+  const totalPayments = revenue?.total_pagos || 0
   const avgOccupancy = occupancy.length > 0
-    ? occupancy.reduce((sum, o) => sum + o.tasa_ocupacion, 0) / occupancy.length
+    ? occupancy.reduce((sum, o) => sum + o.porcentaje_ocupacion, 0) / occupancy.length
     : 0
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Reportes</h1>
+
+      {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-600">{error}</div>}
 
       <Card>
         <CardContent className="p-6">
@@ -100,12 +108,12 @@ export default function ReportesPage() {
                   </thead>
                   <tbody>
                     {occupancy.map((o) => (
-                      <tr key={o.date} className="border-b">
+                      <tr key={o.fecha} className="border-b">
                         <td className="p-2">{formatDateShort(o.fecha)}</td>
                         <td className="text-right p-2">{o.total_habitaciones}</td>
                         <td className="text-right p-2">{o.habitaciones_ocupadas}</td>
                         <td className="text-right p-2">{o.habitaciones_disponibles}</td>
-                        <td className="text-right p-2">{o.tasa_ocupacion}%</td>
+                        <td className="text-right p-2">{o.porcentaje_ocupacion}%</td>
                       </tr>
                     ))}
                   </tbody>
@@ -126,20 +134,20 @@ export default function ReportesPage() {
                   <thead>
                     <tr className="border-b">
                       <th className="text-left p-2">Fecha</th>
-                      <th className="text-right p-2">Habitaciones</th>
-                      <th className="text-right p-2">Extra</th>
-                      <th className="text-right p-2">Total</th>
+                      <th className="text-right p-2">Ingresos</th>
+                      <th className="text-right p-2">Cargos</th>
+                      <th className="text-right p-2">Pagos</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {revenue.map((r) => (
-                      <tr key={r.date} className="border-b">
-                        <td className="p-2">{formatDateShort(r.fecha)}</td>
-                        <td className="text-right p-2">{formatCurrency(r.ingresos_habitaciones)}</td>
-                        <td className="text-right p-2">{formatCurrency(r.cargos_extra)}</td>
-                        <td className="text-right p-2">{formatCurrency(r.ingresos_totales)}</td>
+                    {revenue && (
+                      <tr className="border-b">
+                        <td className="p-2">{formatDateShort(revenue.desde)} - {formatDateShort(revenue.hasta)}</td>
+                        <td className="text-right p-2">{formatCurrency(revenue.total_ingresos)}</td>
+                        <td className="text-right p-2">{formatCurrency(revenue.total_cargos)}</td>
+                        <td className="text-right p-2">{formatCurrency(revenue.total_pagos)}</td>
                       </tr>
-                    ))}
+                    )}
                   </tbody>
                 </table>
               </div>

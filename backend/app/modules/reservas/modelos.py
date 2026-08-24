@@ -33,6 +33,7 @@ class Reserva(Base):
     tiene_vehiculo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     detalle_vehiculo: Mapped[str] = mapped_column(Text, nullable=True)
     solicitudes_especiales: Mapped[str] = mapped_column(Text, nullable=True)
+    motivo_cancelacion: Mapped[str] = mapped_column(Text, nullable=True)
     creado_en: Mapped[datetime] = mapped_column(
         "created_at", DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

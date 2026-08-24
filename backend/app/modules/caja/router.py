@@ -1,17 +1,53 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 
 from app.core.database import get_db
 from app.core.dependencies import PersonalUsuario
 from app.common.auditoria import crear_registro_auditoria
 from app.modules.caja.modelos import SesionCaja
-from app.modules.caja.esquemas import SesionCajaAbrir, SesionCajaCerrar, SesionCajaResponse
+from app.modules.caja.esquemas import (
+    SesionCajaAbrir,
+    SesionCajaCerrar,
+    SesionCajaResponse,
+    SesionesCajaPaginadas,
+)
+from app.modules.facturacion.modelos import Pago
 from app.modules.usuarios.modelos import Usuario
 
 router = APIRouter(prefix="/sesiones-caja", tags=["Caja"])
+
+METODO_EFECTIVO = "efectivo"
+
+
+def _pagos_sesion(db: Session, sesion: SesionCaja) -> list[Pago]:
+    return (
+        db.query(Pago)
+        .filter(
+            Pago.recibido_por == sesion.usuario_id,
+            Pago.pagado_en >= sesion.abierta_en,
+        )
+        .all()
+    )
+
+
+def _desglose_pagos(pagos: list[Pago]) -> dict:
+    por_metodo: dict[str, float] = {}
+    for pago in pagos:
+        metodo = (pago.metodo_pago or "Otro").strip()
+        por_metodo[metodo] = round(por_metodo.get(metodo, 0) + float(pago.monto), 2)
+    efectivo = sum(
+        monto for metodo, monto in por_metodo.items()
+        if metodo.lower() == METODO_EFECTIVO
+    )
+    return {
+        "por_metodo": por_metodo,
+        "total_pagos": round(sum(float(p.monto) for p in pagos), 2),
+        "cantidad_pagos": len(pagos),
+        "efectivo": round(efectivo, 2),
+    }
 
 
 @router.post("/abrir", response_model=SesionCajaResponse, status_code=status.HTTP_201_CREATED)
@@ -56,82 +92,6 @@ def abrir_sesion_caja(
     return SesionCajaResponse.model_validate(sesion)
 
 
-@router.post("/{sesion_id}/cerrar", response_model=SesionCajaResponse)
-def cerrar_sesion_caja(
-    sesion_id: str,
-    datos: SesionCajaCerrar,
-    request: Request,
-    db: Session = Depends(get_db),
-    usuario_actual: Usuario = Depends(PersonalUsuario),
-):
-    sesion = db.query(SesionCaja).filter(SesionCaja.id == sesion_id).first()
-    if not sesion:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Sesion de caja no encontrada",
-        )
-    if sesion.estado != "ABIERTA":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="La sesion de caja ya esta cerrada",
-        )
-    if sesion.usuario_id != usuario_actual.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No puedes cerrar una sesion de caja que no te pertenece",
-        )
-
-    from app.modules.facturacion.modelos import Pago
-
-    total_pagos = (
-        db.query(func.sum(Pago.monto))
-        .filter(
-            Pago.recibido_por == usuario_actual.id,
-            Pago.pagado_en >= sesion.abierta_en,
-        )
-        .scalar()
-        or 0
-    )
-
-    sesion.monto_esperado = sesion.monto_apertura + float(total_pagos)
-    sesion.monto_declarado = datos.monto_declarado
-    sesion.diferencia = datos.monto_declarado - sesion.monto_esperado
-    sesion.cerrada_en = datetime.now(timezone.utc)
-    sesion.estado = "CERRADA"
-    db.commit()
-    db.refresh(sesion)
-
-    crear_registro_auditoria(
-        db=db,
-        usuario_id=usuario_actual.id,
-        accion="CERRAR_CAJA",
-        tipo_entidad="SesionCaja",
-        entidad_id=sesion.id,
-        valores_anteriores={"estado": "ABIERTA"},
-        valores_nuevos={
-            "estado": "CERRADA",
-            "monto_esperado": sesion.monto_esperado,
-            "diferencia": sesion.diferencia,
-        },
-        direccion_ip=request.client.host if request.client else None,
-    )
-
-    return SesionCajaResponse.model_validate(sesion)
-
-
-@router.get("", response_model=list[SesionCajaResponse])
-def listar_sesiones_caja(
-    db: Session = Depends(get_db),
-    _: Usuario = Depends(PersonalUsuario),
-):
-    sesiones = (
-        db.query(SesionCaja)
-        .order_by(SesionCaja.abierta_en.desc())
-        .all()
-    )
-    return [SesionCajaResponse.model_validate(s) for s in sesiones]
-
-
 @router.get("/activa", response_model=SesionCajaResponse)
 def obtener_sesion_activa(
     db: Session = Depends(get_db),
@@ -151,3 +111,123 @@ def obtener_sesion_activa(
             detail="No tienes una sesion de caja abierta",
         )
     return SesionCajaResponse.model_validate(sesion)
+
+
+@router.get("/{sesion_id}/resumen", response_model=dict)
+def obtener_resumen_sesion(
+    sesion_id: str,
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(PersonalUsuario),
+):
+    sesion = db.query(SesionCaja).filter(SesionCaja.id == sesion_id).first()
+    if not sesion:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Sesion de caja no encontrada",
+        )
+    desglose = _desglose_pagos(_pagos_sesion(db, sesion))
+    return {
+        "sesion_id": sesion.id,
+        "estado": sesion.estado,
+        "abierta_en": sesion.abierta_en.isoformat() if sesion.abierta_en else None,
+        "cerrada_en": sesion.cerrada_en.isoformat() if sesion.cerrada_en else None,
+        "monto_apertura": float(sesion.monto_apertura or 0),
+        **desglose,
+        "esperado_caja": round(float(sesion.monto_apertura or 0) + desglose["efectivo"], 2),
+    }
+
+
+@router.post("/{sesion_id}/cerrar", response_model=SesionCajaResponse)
+def cerrar_sesion_caja(
+    sesion_id: str,
+    datos: SesionCajaCerrar,
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario_actual: Usuario = Depends(PersonalUsuario),
+):
+    sesion = db.query(SesionCaja).filter(SesionCaja.id == sesion_id).first()
+    if not sesion:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Sesion de caja no encontrada",
+        )
+    if sesion.estado != "ABIERTA":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La sesion de caja ya esta cerrada",
+        )
+    es_propia = sesion.usuario_id == usuario_actual.id
+    puede_supervisar = usuario_actual.rol in ("admin", "gerente")
+    if not es_propia and not puede_supervisar:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No puedes cerrar una sesion de caja que no te pertenece",
+        )
+
+    desglose = _desglose_pagos(_pagos_sesion(db, sesion))
+
+    sesion.monto_esperado = round(float(sesion.monto_apertura or 0) + desglose["efectivo"], 2)
+    sesion.monto_declarado = datos.monto_declarado
+    sesion.diferencia = round(datos.monto_declarado - sesion.monto_esperado, 2)
+    sesion.cerrada_en = datetime.now(timezone.utc)
+    sesion.estado = "CERRADA"
+    db.commit()
+    db.refresh(sesion)
+
+    crear_registro_auditoria(
+        db=db,
+        usuario_id=usuario_actual.id,
+        accion="CERRAR_CAJA",
+        tipo_entidad="SesionCaja",
+        entidad_id=sesion.id,
+        valores_anteriores={"estado": "ABIERTA"},
+        valores_nuevos={
+            "estado": "CERRADA",
+            "monto_esperado": sesion.monto_esperado,
+            "monto_declarado": sesion.monto_declarado,
+            "diferencia": sesion.diferencia,
+            "cerrada_por_propietario": es_propia,
+        },
+        direccion_ip=request.client.host if request.client else None,
+    )
+
+    return SesionCajaResponse.model_validate(sesion)
+
+
+@router.get("", response_model=SesionesCajaPaginadas)
+def listar_sesiones_caja(
+    estado: str | None = Query(None),
+    usuario_id: str | None = Query(None),
+    desde: datetime | None = Query(None),
+    hasta: datetime | None = Query(None),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(PersonalUsuario),
+):
+    consulta = db.query(SesionCaja).options(joinedload(SesionCaja.usuario))
+    if estado:
+        consulta = consulta.filter(SesionCaja.estado == estado.upper())
+    if usuario_id:
+        consulta = consulta.filter(SesionCaja.usuario_id == usuario_id)
+    if desde:
+        consulta = consulta.filter(SesionCaja.abierta_en >= desde)
+    if hasta:
+        consulta = consulta.filter(SesionCaja.abierta_en <= hasta)
+
+    total = consulta.count()
+    sesiones = (
+        consulta
+        .order_by(SesionCaja.abierta_en.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
+
+    return SesionesCajaPaginadas(
+        items=[SesionCajaResponse.model_validate(s) for s in sesiones],
+        total=total,
+        page=page,
+        pages=(total + per_page - 1) // per_page,
+        per_page=per_page,
+    )

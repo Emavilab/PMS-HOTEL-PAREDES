@@ -1,123 +1,340 @@
 "use client"
 
-import { useEffect, useState, FormEvent } from "react"
+import { FormEvent, useEffect, useState } from "react"
 import { api } from "@/lib/api"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Dialog } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Badge, statusBadge } from "@/components/ui/badge"
-import { Plus, User } from "lucide-react"
+import { AlertTriangle, CheckCircle2, Edit, Plus, Trash2, User } from "lucide-react"
 import { useAuth } from "@/hooks/useAuth"
 import type { Usuario } from "@/types"
+
+const roles = [
+  { value: "admin", label: "Administrador" },
+  { value: "gerente", label: "Gerente" },
+  { value: "recepcionista", label: "Recepcionista" },
+  { value: "limpieza", label: "Limpieza" },
+]
+
+const initialForm = {
+  email: "",
+  contrasena: "",
+  nombre_completo: "",
+  telefono: "",
+  rol: "recepcionista",
+  estado: "activo",
+}
+
+type UserForm = typeof initialForm
+
+type ConfirmConfig = {
+  open: boolean
+  title: string
+  message: string
+  confirmLabel: string
+  variant: "default" | "destructive"
+  action: () => Promise<void>
+}
 
 export default function UsuariosPage() {
   const { user: currentUser } = useAuth()
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
   const [loading, setLoading] = useState(true)
-  const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ email: "", contrasena: "", nombre_completo: "", rol: "recepcionista" })
+  const [saving, setSaving] = useState(false)
+  const [formDialog, setFormDialog] = useState(false)
+  const [editingUser, setEditingUser] = useState<Usuario | null>(null)
+  const [form, setForm] = useState<UserForm>(initialForm)
   const [error, setError] = useState("")
+  const [confirm, setConfirm] = useState<ConfirmConfig | null>(null)
+  const [success, setSuccess] = useState("")
 
   function loadUsers() {
     setLoading(true)
-    api.usuarios.listar().then(setUsuarios).finally(() => setLoading(false))
+    setError("")
+    api.usuarios.listar()
+      .then(setUsuarios)
+      .catch((err) => setError(err.message || "No se pudieron cargar los usuarios"))
+      .finally(() => setLoading(false))
   }
 
-  useEffect(() => { loadUsers() }, [])
+  useEffect(() => {
+    loadUsers()
+  }, [])
 
-  async function handleSubmit(e: FormEvent) {
+  function openForm(usuario?: Usuario) {
+    setEditingUser(usuario || null)
+    setForm(usuario ? {
+      email: usuario.email,
+      contrasena: "",
+      nombre_completo: usuario.nombre_completo,
+      telefono: usuario.telefono || "",
+      rol: usuario.rol,
+      estado: usuario.estado,
+    } : initialForm)
+    setError("")
+    setFormDialog(true)
+  }
+
+  function validateForm() {
+    const email = form.email.trim()
+    const name = form.nombre_completo.trim()
+    const password = form.contrasena.trim()
+
+    if (name.length < 3) return "El nombre completo debe tener al menos 3 caracteres"
+    if (!/^\S+@\S+\.\S+$/.test(email)) return "Ingresa un correo valido"
+    if (!editingUser && password.length < 6) return "La contrasena debe tener al menos 6 caracteres"
+    if (editingUser && password && password.length < 6) return "La nueva contrasena debe tener al menos 6 caracteres"
+    if (!roles.some((role) => role.value === form.rol)) return "Selecciona un tipo de usuario valido"
+    if (!['activo', 'inactivo'].includes(form.estado)) return "Selecciona un estado valido"
+    return ""
+  }
+
+  function saveUser(e: FormEvent) {
     e.preventDefault()
+    const validation = validateForm()
+    if (validation) {
+      setError(validation)
+      return
+    }
+
+    setConfirm({
+      open: true,
+      title: editingUser ? "Confirmar cambios" : "Crear usuario",
+      message: editingUser
+        ? `Se actualizaran los datos de ${form.nombre_completo.trim()}.`
+        : `Se creara el usuario ${form.nombre_completo.trim()} con tipo ${roleLabel(form.rol)}.`,
+      confirmLabel: editingUser ? "Guardar cambios" : "Crear usuario",
+      variant: "default",
+      action: persistUser,
+    })
+  }
+
+  async function persistUser() {
+    setSaving(true)
     setError("")
     try {
-      await api.usuarios.crear(form)
-      setShowForm(false)
-      setForm({ email: "", contrasena: "", nombre_completo: "", rol: "recepcionista" })
+      const payload: Record<string, string | null> = {
+        email: form.email.trim().toLowerCase(),
+        nombre_completo: form.nombre_completo.trim(),
+        telefono: form.telefono.trim() || null,
+        rol: form.rol,
+        estado: form.estado,
+      }
+      if (form.contrasena.trim()) payload.contrasena = form.contrasena.trim()
+      if (!editingUser) delete payload.estado
+
+      if (editingUser) await api.usuarios.actualizar(editingUser.id, payload)
+      else await api.usuarios.crear(payload)
+
+      setFormDialog(false)
+      setSuccess(editingUser ? "Usuario actualizado correctamente" : "Usuario creado correctamente")
       loadUsers()
-    } catch (err: any) { setError(err.message) }
+    } catch (err: any) {
+      setError(err.message || "No se pudo guardar el usuario")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function deleteUser(usuario: Usuario) {
+    setConfirm({
+      open: true,
+      title: "Eliminar usuario",
+      message: `Esta accion eliminara a ${usuario.nombre_completo}. Si tiene movimientos asociados, el sistema pedira desactivarlo en su lugar.`,
+      confirmLabel: "Eliminar usuario",
+      variant: "destructive",
+      action: async () => {
+        setSaving(true)
+        setError("")
+        try {
+          await api.usuarios.eliminar(usuario.id)
+          setSuccess("Usuario eliminado correctamente")
+          loadUsers()
+        } catch (err: any) {
+          setError(err.message || "No se pudo eliminar el usuario")
+        } finally {
+          setSaving(false)
+        }
+      },
+    })
+  }
+
+  async function confirmAction() {
+    if (!confirm) return
+    await confirm.action()
+    setConfirm(null)
   }
 
   if (currentUser?.rol !== "admin") {
-    return <p className="text-gray-500">No tienes permisos para ver esta página.</p>
+    return <p className="text-gray-500">No tienes permisos para ver esta pagina.</p>
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Usuarios</h1>
-        <Button onClick={() => setShowForm(true)}>
-          <Plus className="h-4 w-4 mr-2" /> Nuevo Usuario
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Usuarios</h1>
+          <p className="text-sm text-gray-500">Administra accesos, tipos de usuario y estado de cuenta.</p>
+        </div>
+        <Button onClick={() => openForm()}>
+          <Plus className="mr-2 h-4 w-4" /> Nuevo usuario
         </Button>
       </div>
 
-      {showForm && (
-        <Card>
-          <CardHeader><CardTitle className="text-lg">Nuevo Usuario</CardTitle></CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {error && <div className="col-span-full p-3 text-sm bg-red-50 text-red-600 rounded-md">{error}</div>}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Nombre Completo</label>
-                <Input value={form.nombre_completo} onChange={(e) => setForm({ ...form, nombre_completo: e.target.value })} required />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Correo</label>
-                <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Contraseña</label>
-                <Input type="password" value={form.contrasena} onChange={(e) => setForm({ ...form, contrasena: e.target.value })} required />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Rol</label>
-                <select className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
-                  value={form.rol} onChange={(e) => setForm({ ...form, rol: e.target.value })}>
-                  <option value="admin">Administrador</option>
-                  <option value="gerente">Gerente</option>
-                  <option value="recepcionista">Recepcionista</option>
-                </select>
-              </div>
-              <div className="col-span-full flex gap-4">
-                <Button type="submit">Guardar</Button>
-                <Button type="button" variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
+      {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 
       <Card>
         <CardContent className="p-0">
           {loading ? (
-            <p className="p-6 text-gray-500">Cargando...</p>
+            <p className="p-6 text-sm text-gray-500">Cargando usuarios...</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="w-full min-w-[820px]">
                 <thead>
                   <tr className="border-b bg-gray-50">
-                    <th className="text-left p-4 text-sm font-medium text-gray-500">Usuario</th>
-                    <th className="text-left p-4 text-sm font-medium text-gray-500">Correo</th>
-                    <th className="text-left p-4 text-sm font-medium text-gray-500">Rol</th>
-                    <th className="text-left p-4 text-sm font-medium text-gray-500">Estado</th>
+                    <th className="p-4 text-left text-sm font-medium text-gray-500">Usuario</th>
+                    <th className="p-4 text-left text-sm font-medium text-gray-500">Correo</th>
+                    <th className="p-4 text-left text-sm font-medium text-gray-500">Telefono</th>
+                    <th className="p-4 text-left text-sm font-medium text-gray-500">Tipo</th>
+                    <th className="p-4 text-left text-sm font-medium text-gray-500">Estado</th>
+                    <th className="p-4 text-right text-sm font-medium text-gray-500">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {usuarios.map((u) => (
-                    <tr key={u.id} className="border-b hover:bg-gray-50">
-                      <td className="p-4 flex items-center gap-2">
-                        <User className="h-4 w-4 text-gray-400" />
-                        {u.nombre_completo}
+                  {usuarios.map((usuario) => (
+                    <tr key={usuario.id} className="border-b hover:bg-gray-50">
+                      <td className="p-4">
+                        <div className="flex items-center gap-2">
+                          <User className="h-4 w-4 text-gray-400" />
+                          <span className="font-medium">{usuario.nombre_completo}</span>
+                        </div>
                       </td>
-                      <td className="p-4">{u.email}</td>
-                      <td className="p-4 capitalize">{u.rol}</td>
-                      <td className="p-4"><Badge {...statusBadge(u.estado)} /></td>
+                      <td className="p-4">{usuario.email}</td>
+                      <td className="p-4">{usuario.telefono || "-"}</td>
+                      <td className="p-4">{roleLabel(usuario.rol)}</td>
+                      <td className="p-4"><Badge {...statusBadge(usuario.estado)} /></td>
+                      <td className="p-4">
+                        <div className="flex justify-end gap-1">
+                          <Button size="icon" variant="ghost" onClick={() => openForm(usuario)}><Edit className="h-4 w-4" /></Button>
+                          <Button size="icon" variant="ghost" onClick={() => deleteUser(usuario)} disabled={usuario.id === currentUser.id || usuario.es_superadmin}>
+                            <Trash2 className="h-4 w-4 text-red-600" />
+                          </Button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              {usuarios.length === 0 && <p className="p-6 text-sm text-gray-500">No hay usuarios registrados.</p>}
             </div>
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={formDialog} onClose={() => setFormDialog(false)} title={editingUser ? "Editar usuario" : "Nuevo usuario"}>
+        <form className="space-y-4" onSubmit={saveUser}>
+          <Field label="Nombre completo">
+            <Input value={form.nombre_completo} onChange={(e) => setForm({ ...form, nombre_completo: e.target.value })} />
+          </Field>
+          <Field label="Correo">
+            <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+          </Field>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Telefono">
+              <Input value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} />
+            </Field>
+            <Field label={editingUser ? "Nueva contrasena" : "Contrasena"}>
+              <Input type="password" value={form.contrasena} onChange={(e) => setForm({ ...form, contrasena: e.target.value })} placeholder={editingUser ? "Dejar igual" : "Minimo 6 caracteres"} />
+            </Field>
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Tipo de usuario">
+              <select className="h-10 w-full rounded-md border border-gray-300 px-3 text-sm" value={form.rol} onChange={(e) => setForm({ ...form, rol: e.target.value })}>
+                {roles.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
+              </select>
+            </Field>
+            {editingUser && (
+              <Field label="Estado">
+                <select className="h-10 w-full rounded-md border border-gray-300 px-3 text-sm" value={form.estado} onChange={(e) => setForm({ ...form, estado: e.target.value })}>
+                  <option value="activo">Activo</option>
+                  <option value="inactivo">Inactivo</option>
+                </select>
+              </Field>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={() => setFormDialog(false)}>Cancelar</Button>
+            <Button type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar"}</Button>
+          </div>
+        </form>
+      </Dialog>
+
+      <ConfirmModal config={confirm} loading={saving} onCancel={() => setConfirm(null)} onConfirm={confirmAction} />
+      <SuccessModal message={success} onClose={() => setSuccess("")} />
     </div>
+  )
+}
+
+function roleLabel(role: string) {
+  return roles.find((item) => item.value === role)?.label || role
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return <label className="block space-y-1 text-sm font-medium text-gray-700"><span>{label}</span>{children}</label>
+}
+
+function ConfirmModal({
+  config,
+  loading,
+  onCancel,
+  onConfirm,
+}: {
+  config: ConfirmConfig | null
+  loading: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const destructive = config?.variant === "destructive"
+
+  return (
+    <Dialog open={!!config?.open} onClose={onCancel} title={config?.title || "Confirmar accion"} className="max-w-md">
+      <div className="space-y-5">
+        <div className="flex gap-4">
+          <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${destructive ? "bg-red-100 text-red-600" : "bg-blue-100 text-blue-600"}`}>
+            {destructive ? <AlertTriangle className="h-6 w-6" /> : <CheckCircle2 className="h-6 w-6" />}
+          </div>
+          <div>
+            <p className="text-sm leading-6 text-gray-600">{config?.message}</p>
+            <p className="mt-2 text-xs text-gray-500">Revisa la informacion antes de continuar.</p>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 border-t pt-4">
+          <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>Cancelar</Button>
+          <Button type="button" variant={destructive ? "destructive" : "default"} onClick={onConfirm} disabled={loading}>
+            {loading ? "Procesando..." : config?.confirmLabel || "Confirmar"}
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  )
+}
+
+function SuccessModal({ message, onClose }: { message: string; onClose: () => void }) {
+  return (
+    <Dialog open={!!message} onClose={onClose} title="Operacion exitosa" className="max-w-sm">
+      <div className="space-y-5">
+        <div className="flex gap-4">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-600">
+            <CheckCircle2 className="h-6 w-6" />
+          </div>
+          <p className="text-sm leading-6 text-gray-600">{message}</p>
+        </div>
+        <div className="flex justify-end border-t pt-4">
+          <Button type="button" onClick={onClose}>Aceptar</Button>
+        </div>
+      </div>
+    </Dialog>
   )
 }

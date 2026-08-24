@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.dependencies import PersonalUsuario
+from app.core.dependencies import LimpiezaUsuario
 from app.common.auditoria import crear_registro_auditoria
 from app.modules.limpieza.modelos import TareaLimpieza
 from app.modules.limpieza.esquemas import (
@@ -25,7 +25,7 @@ def listar_tareas_limpieza(
     asignada_a: str | None = Query(None),
     fecha: str | None = Query(None, alias="fecha_tarea"),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(PersonalUsuario),
+    _: Usuario = Depends(LimpiezaUsuario),
 ):
     consulta = db.query(TareaLimpieza)
     if estado:
@@ -46,7 +46,7 @@ def crear_tarea_limpieza(
     datos: TareaLimpiezaCrear,
     request: Request,
     db: Session = Depends(get_db),
-    usuario_actual: Usuario = Depends(PersonalUsuario),
+    usuario_actual: Usuario = Depends(LimpiezaUsuario),
 ):
     habitacion = db.query(Habitacion).filter(Habitacion.id == datos.habitacion_id).first()
     if not habitacion:
@@ -83,7 +83,7 @@ def actualizar_tarea_limpieza(
     datos: TareaLimpiezaActualizar,
     request: Request,
     db: Session = Depends(get_db),
-    usuario_actual: Usuario = Depends(PersonalUsuario),
+    usuario_actual: Usuario = Depends(LimpiezaUsuario),
 ):
     tarea = db.query(TareaLimpieza).filter(TareaLimpieza.id == tarea_id).first()
     if not tarea:

@@ -26,7 +26,6 @@ class Settings(BaseSettings):
     DEFAULT_CHECKIN_TIME: str = "15:00"
     DEFAULT_CHECKOUT_TIME: str = "12:00"
     DEFAULT_CURRENCY: str = "HNL"
-    DEFAULT_TAX_RATE: float = 0.15
 
     class Config:
         env_file = ".env"
