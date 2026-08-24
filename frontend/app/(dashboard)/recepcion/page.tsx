@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Badge, statusBadge } from "@/components/ui/badge"
 import { Dialog } from "@/components/ui/dialog"
 import { formatCurrency, formatDateShort } from "@/lib/utils"
-import { LogIn, LogOut, RefreshCw, Plus, Search, BedDouble, User, Calendar, Users, Check, X } from "lucide-react"
+import { AlertTriangle, BedDouble, Calendar, Check, ClipboardList, Clock, DoorOpen, LogIn, LogOut, Plus, RefreshCw, Search, X } from "lucide-react"
 
 interface AccionConfirmar {
   tipo: "checkin" | "checkout"
@@ -28,6 +28,7 @@ export default function RecepcionPage() {
 
   const [showQuickReserva, setShowQuickReserva] = useState(false)
   const [roomToRent, setRoomToRent] = useState<any | null>(null)
+  const [occupiedRoom, setOccupiedRoom] = useState<any | null>(null)
   const [search, setSearch] = useState("")
   const [searchResults, setSearchResults] = useState<any[] | null>(null)
   const [searching, setSearching] = useState(false)
@@ -48,6 +49,15 @@ export default function RecepcionPage() {
   }, [])
 
   useEffect(() => { loadData() }, [loadData])
+
+  useEffect(() => {
+    function refreshOnFocus() {
+      loadData()
+    }
+
+    window.addEventListener("focus", refreshOnFocus)
+    return () => window.removeEventListener("focus", refreshOnFocus)
+  }, [loadData])
 
   async function handleConfirm() {
     if (!accion) return
@@ -85,8 +95,14 @@ export default function RecepcionPage() {
   }
 
   const availableRooms = rooms.filter((r) => r.estado_operativo === "DISPONIBLE")
+  const rentableRooms = availableRooms.filter((r) => r.estado_limpieza === "LIMPIA")
+  const occupiedRooms = rooms.filter((r) => r.estado_operativo === "OCUPADA")
+  const unavailableRooms = rooms.filter((r) => !["DISPONIBLE", "OCUPADA"].includes(r.estado_operativo))
+  const dirtyRooms = rooms.filter((r) => r.estado_limpieza === "SUCIA")
+  const cleaningRooms = rooms.filter((r) => r.estado_limpieza === "EN_PROGRESO")
+  const occupancy = rooms.length ? Math.round((occupiedRooms.length / rooms.length) * 100) : 0
   const matchingRooms = accion?.tipo === "checkin" && accion.reserva.tipo_habitacion_id
-    ? availableRooms.filter((r) => r.tipo_habitacion_id === accion.reserva.tipo_habitacion_id)
+    ? rentableRooms.filter((r) => r.tipo_habitacion_id === accion.reserva.tipo_habitacion_id)
     : []
 
   async function handleSearch() {
@@ -102,31 +118,99 @@ export default function RecepcionPage() {
     }
   }
 
+  function handleRoomClick(room: any) {
+    if (room.estado_operativo === "DISPONIBLE" && room.estado_limpieza === "LIMPIA") {
+      setRoomToRent(room)
+    } else if (room.estado_operativo === "DISPONIBLE") {
+      setError(`La habitación ${room.numero} no se puede rentar porque está en estado de limpieza: ${statusBadge(room.estado_limpieza).label}`)
+    } else if (room.estado_operativo === "OCUPADA") {
+      setOccupiedRoom(room)
+    }
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
-        <h1 className="text-2xl font-bold">Recepción</h1>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Button variant="outline" size="sm" onClick={() => setShowQuickReserva(true)}>
-            <Plus className="h-4 w-4 mr-1" /> Nueva Reserva
-          </Button>
-          <Button variant="outline" size="sm" onClick={loadData} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} />
-            Actualizar
-          </Button>
+      <div className="overflow-hidden rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-700 via-blue-600 to-sky-500 text-white shadow-sm">
+        <div className="p-5 sm:p-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-blue-50 ring-1 ring-white/20">
+                <Clock className="h-3.5 w-3.5" /> Panel operativo de hoy
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold sm:text-3xl">Recepción</h1>
+                <p className="mt-1 max-w-2xl text-sm text-blue-50">
+                  Gestiona llegadas, salidas, ocupación y renta directa desde una sola vista.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" size="sm" className="border-white/30 bg-white/10 text-white hover:bg-white/20" onClick={() => setShowQuickReserva(true)}>
+                <Plus className="h-4 w-4 mr-1" /> Nueva Reserva
+              </Button>
+              <Button variant="outline" size="sm" className="border-white/30 bg-white text-blue-700 hover:bg-blue-50" onClick={loadData} disabled={loading}>
+                <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} />
+                Actualizar
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <div className="rounded-xl bg-white/10 p-4 ring-1 ring-white/15 backdrop-blur">
+              <div className="flex items-center justify-between text-blue-50">
+                <span className="text-xs font-medium uppercase tracking-wide">Llegadas</span>
+                <LogIn className="h-4 w-4" />
+              </div>
+              <p className="mt-2 text-3xl font-bold">{loading ? "-" : arrivals.length}</p>
+              <p className="text-xs text-blue-50">Reservas para check-in</p>
+            </div>
+            <div className="rounded-xl bg-white/10 p-4 ring-1 ring-white/15 backdrop-blur">
+              <div className="flex items-center justify-between text-blue-50">
+                <span className="text-xs font-medium uppercase tracking-wide">Salidas</span>
+                <LogOut className="h-4 w-4" />
+              </div>
+              <p className="mt-2 text-3xl font-bold">{loading ? "-" : departures.length}</p>
+              <p className="text-xs text-blue-50">Habitaciones por liberar</p>
+            </div>
+            <div className="rounded-xl bg-white/10 p-4 ring-1 ring-white/15 backdrop-blur">
+              <div className="flex items-center justify-between text-blue-50">
+                <span className="text-xs font-medium uppercase tracking-wide">Disponibles</span>
+                <DoorOpen className="h-4 w-4" />
+              </div>
+              <p className="mt-2 text-3xl font-bold">{loading ? "-" : rentableRooms.length}</p>
+              <p className="text-xs text-blue-50">Limpias y listas para renta</p>
+            </div>
+            <div className="rounded-xl bg-white/10 p-4 ring-1 ring-white/15 backdrop-blur">
+              <div className="flex items-center justify-between text-blue-50">
+                <span className="text-xs font-medium uppercase tracking-wide">Ocupación</span>
+                <ClipboardList className="h-4 w-4" />
+              </div>
+              <p className="mt-2 text-3xl font-bold">{loading ? "-" : `${occupancy}%`}</p>
+              <p className="text-xs text-blue-50">{occupiedRooms.length} de {rooms.length} habitaciones</p>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-        <Input
-          className="pl-9"
-          placeholder="Buscar huésped por nombre, documento o email..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-        />
-      </div>
+      <Card className="border-gray-200 shadow-sm">
+        <CardContent className="p-3 sm:p-4">
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                className="pl-9"
+                placeholder="Buscar huésped por nombre, documento o email..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+              />
+            </div>
+            <Button onClick={handleSearch} disabled={searching || !search.trim()} className="sm:w-32">
+              {searching ? "Buscando" : "Buscar"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {searchResults !== null && (
         <Card>
@@ -146,7 +230,7 @@ export default function RecepcionPage() {
             ) : (
               <div className="space-y-2">
                 {searchResults.map((h) => (
-                  <div key={h.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-md text-sm">
+                  <div key={h.id} className="flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50 p-3 text-sm">
                     <div>
                       <p className="font-medium">{h.nombres} {h.apellidos}</p>
                       <p className="text-xs text-gray-500">{h.tipo_documento}: {h.numero_documento} {h.email && `| ${h.email}`}</p>
@@ -164,22 +248,24 @@ export default function RecepcionPage() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
+        <Card className="overflow-hidden">
+          <CardHeader className="border-b bg-green-50/60">
             <CardTitle className="text-lg flex items-center gap-2">
               <LogIn className="h-5 w-5 text-green-600" /> Llegadas del Día
               {!loading && <span className="text-sm font-normal text-gray-500">({arrivals.length})</span>}
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-4">
             {loading ? (
               <p className="text-gray-500">Cargando...</p>
             ) : arrivals.length === 0 ? (
-              <p className="text-gray-500">No hay llegadas programadas</p>
+              <div className="rounded-xl border border-dashed border-gray-200 p-6 text-center text-sm text-gray-500">
+                No hay llegadas programadas para hoy.
+              </div>
             ) : (
               <div className="space-y-2">
                 {arrivals.map((arr) => (
-                  <div key={arr.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                  <div key={arr.id} className="flex flex-col gap-3 rounded-xl border border-gray-100 bg-white p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
                       <p className="font-medium truncate">{arr.huesped}</p>
                       <p className="text-xs text-gray-500">{arr.codigo_confirmacion}</p>
@@ -188,7 +274,7 @@ export default function RecepcionPage() {
                         {arr.habitacion && <span className="flex items-center gap-1"><BedDouble className="h-3 w-3" />Hab. {arr.habitacion}</span>}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0 ml-2">
+                    <div className="flex items-center gap-2 shrink-0 sm:ml-2">
                       <Badge {...statusBadge(arr.estado)} />
                       {arr.estado === "CHECKED_IN" ? (
                         <Badge variant="success" className="text-xs">Ya registrado</Badge>
@@ -205,22 +291,24 @@ export default function RecepcionPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
+        <Card className="overflow-hidden">
+          <CardHeader className="border-b bg-orange-50/70">
             <CardTitle className="text-lg flex items-center gap-2">
               <LogOut className="h-5 w-5 text-orange-600" /> Salidas del Día
               {!loading && <span className="text-sm font-normal text-gray-500">({departures.length})</span>}
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-4">
             {loading ? (
               <p className="text-gray-500">Cargando...</p>
             ) : departures.length === 0 ? (
-              <p className="text-gray-500">No hay salidas programadas</p>
+              <div className="rounded-xl border border-dashed border-gray-200 p-6 text-center text-sm text-gray-500">
+                No hay salidas programadas para hoy.
+              </div>
             ) : (
               <div className="space-y-2">
                 {departures.map((dep) => (
-                  <div key={dep.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                  <div key={dep.id} className="flex flex-col gap-3 rounded-xl border border-gray-100 bg-white p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
                       <p className="font-medium truncate">{dep.huesped}</p>
                       <p className="text-xs text-gray-500">{dep.codigo_confirmacion}</p>
@@ -229,7 +317,7 @@ export default function RecepcionPage() {
                         {dep.total != null && <span className="font-medium text-gray-600">{formatCurrency(dep.total)}</span>}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0 ml-2">
+                    <div className="flex items-center gap-2 shrink-0 sm:ml-2">
                       <Badge {...statusBadge(dep.estado)} />
                       <Button size="sm" variant="secondary" onClick={() => openCheckOut(dep)}>
                         Check-out
@@ -243,34 +331,64 @@ export default function RecepcionPage() {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Estado de Habitaciones</CardTitle>
+      <Card className="overflow-hidden">
+        <CardHeader className="border-b bg-gray-50">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <CardTitle className="text-lg">Estado de Habitaciones</CardTitle>
+              <p className="mt-1 text-sm text-gray-500">Haz clic en una disponible para rentarla o en una ocupada para ver sus detalles.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs sm:flex sm:items-center">
+              <span className="rounded-full bg-green-100 px-2.5 py-1 font-medium text-green-800">{rentableRooms.length} rentables</span>
+              <span className="rounded-full bg-yellow-100 px-2.5 py-1 font-medium text-yellow-800">{occupiedRooms.length} ocupadas</span>
+              <span className="rounded-full bg-red-100 px-2.5 py-1 font-medium text-red-800">{unavailableRooms.length} fuera de servicio</span>
+              <span className="rounded-full bg-gray-100 px-2.5 py-1 font-medium text-gray-700">{dirtyRooms.length} sucias</span>
+              <span className="rounded-full bg-blue-100 px-2.5 py-1 font-medium text-blue-800">{cleaningRooms.length} en limpieza</span>
+            </div>
+          </div>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+        <CardContent className="p-4 sm:p-6">
+          {dirtyRooms.length > 0 && (
+            <div className="mb-4 flex items-start gap-2 rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              Hay {dirtyRooms.length} habitación{dirtyRooms.length !== 1 ? "es" : ""} marcada{dirtyRooms.length !== 1 ? "s" : ""} como sucia{dirtyRooms.length !== 1 ? "s" : ""}; no se pueden rentar hasta quedar limpias.
+            </div>
+          )}
+          {cleaningRooms.length > 0 && (
+            <div className="mb-4 flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              Hay {cleaningRooms.length} habitación{cleaningRooms.length !== 1 ? "es" : ""} en limpieza; estarán bloqueadas para renta hasta finalizar limpieza.
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
             {rooms.map((room) => (
               <div
                 key={room.id}
-                onClick={() => room.estado_operativo === "DISPONIBLE" ? setRoomToRent(room) : null}
-                className={`p-3 rounded-md text-center relative ${
-                  room.estado_operativo === "DISPONIBLE"
-                    ? "bg-green-100 text-green-800 cursor-pointer hover:bg-green-200 transition-colors"
-                    : room.estado_operativo === "OCUPADA"
-                    ? "bg-yellow-100 text-yellow-800 cursor-default"
-                    : "bg-red-100 text-red-800 cursor-default"
+                onClick={() => handleRoomClick(room)}
+                className={`relative rounded-xl border p-3 text-center shadow-sm transition ${
+                  room.estado_limpieza === "EN_PROGRESO"
+                    ? "border-blue-200 bg-blue-50 text-blue-900 cursor-not-allowed"
+                  : room.estado_operativo === "DISPONIBLE" && room.estado_limpieza === "LIMPIA"
+                    ? "border-green-200 bg-green-50 text-green-900 cursor-pointer hover:-translate-y-0.5 hover:bg-green-100 hover:shadow-md"
+                  : room.estado_operativo === "DISPONIBLE" && room.estado_limpieza === "SUCIA"
+                    ? "border-gray-300 bg-gray-100 text-gray-700 cursor-not-allowed"
+                  : room.estado_operativo === "OCUPADA"
+                    ? "border-yellow-200 bg-yellow-50 text-yellow-900 cursor-pointer hover:-translate-y-0.5 hover:bg-yellow-100 hover:shadow-md"
+                    : "border-red-200 bg-red-50 text-red-900 cursor-default"
                 }`}
               >
-                <p className="font-bold text-lg">{room.numero}</p>
-                <p className="text-xs">{room.tipo_habitacion?.nombre}</p>
-                <p className="text-xs mt-1">{statusBadge(room.estado_operativo).label}</p>
+                <p className="text-xs font-medium uppercase tracking-wide opacity-70">Hab.</p>
+                <p className="font-bold text-2xl leading-tight">{room.numero}</p>
+                <p className="mt-1 truncate text-xs">{room.tipo_habitacion?.nombre}</p>
+                <p className="mt-2 text-xs font-semibold">{statusBadge(room.estado_operativo).label}</p>
+                <p className="text-[10px] font-medium opacity-75">{statusBadge(room.estado_limpieza).label}</p>
                 <p className="text-[10px] mt-0.5 opacity-60">
                   {room.tipo_habitacion ? formatCurrency(room.tipo_habitacion.precio_base) + "/noche" : ""}
                 </p>
-                <div className={`absolute top-1 right-1 w-2 h-2 rounded-full ${
+                <div className={`absolute right-2 top-2 h-2.5 w-2.5 rounded-full ring-2 ring-white ${
                   room.estado_limpieza === "LIMPIA" ? "bg-green-500" :
                   room.estado_limpieza === "SUCIA" ? "bg-red-500" :
-                  room.estado_limpieza === "EN_PROGRESO" ? "bg-yellow-500" : "bg-blue-500"
+                  room.estado_limpieza === "EN_PROGRESO" ? "bg-blue-500" : "bg-purple-500"
                 }`} title={`Limpieza: ${room.estado_limpieza}`} />
               </div>
             ))}
@@ -292,9 +410,9 @@ export default function RecepcionPage() {
             </div>
 
             <div>
-              <label className="text-sm font-medium block mb-2">Habitación disponible{matchingRooms.length > 0 ? ` (recomendadas: ${matchingRooms.length})` : ` (${availableRooms.length} totales)`}</label>
+              <label className="text-sm font-medium block mb-2">Habitación limpia disponible{matchingRooms.length > 0 ? ` (recomendadas: ${matchingRooms.length})` : ` (${rentableRooms.length} totales)`}</label>
               <div className="max-h-48 overflow-auto space-y-2 border rounded-md p-2">
-                {(matchingRooms.length > 0 ? matchingRooms : availableRooms).map((room) => (
+                {(matchingRooms.length > 0 ? matchingRooms : rentableRooms).map((room) => (
                   <div
                     key={room.id}
                     className={`flex items-center justify-between p-2 rounded-md cursor-pointer text-sm ${
@@ -317,7 +435,7 @@ export default function RecepcionPage() {
                     </div>
                   </div>
                 ))}
-                {availableRooms.length === 0 && <p className="text-sm text-gray-500 text-center py-2">No hay habitaciones disponibles</p>}
+                {rentableRooms.length === 0 && <p className="text-sm text-gray-500 text-center py-2">No hay habitaciones limpias disponibles</p>}
               </div>
             </div>
 
@@ -367,6 +485,11 @@ export default function RecepcionPage() {
         room={roomToRent}
         onClose={() => setRoomToRent(null)}
         onCreated={() => { setRoomToRent(null); loadData() }}
+      />
+
+      <DetalleHabitacionOcupadaDialog
+        room={occupiedRoom}
+        onClose={() => setOccupiedRoom(null)}
       />
     </div>
   )
@@ -523,6 +646,87 @@ function NuevaReservaDialog({ open, onClose, onCreated }: { open: boolean; onClo
   )
 }
 
+function DetalleHabitacionOcupadaDialog({ room, onClose }: { room: any | null; onClose: () => void }) {
+  const [detalle, setDetalle] = useState<any | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState("")
+
+  useEffect(() => {
+    if (!room) return
+
+    setLoading(true)
+    setDetalle(null)
+    setError("")
+    api.ventas.detalleOcupacion(room.id)
+      .then(setDetalle)
+      .catch((err: any) => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [room])
+
+  return (
+    <Dialog open={!!room} onClose={onClose} title={`Habitación ${room?.numero} ocupada`} className="max-w-2xl">
+      {loading ? (
+        <p className="text-sm text-gray-500">Cargando detalles...</p>
+      ) : error ? (
+        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-600">{error}</div>
+      ) : detalle ? (
+        <div className="space-y-4">
+          <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-yellow-700">Estadía activa</p>
+                <h3 className="mt-1 text-xl font-bold text-yellow-950">{detalle.huesped?.nombre}</h3>
+                <p className="text-sm text-yellow-800">Reserva {detalle.codigo_confirmacion}</p>
+              </div>
+              <Badge variant="warning">Ocupada</Badge>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <InfoItem label="Habitación" value={`${detalle.habitacion?.numero || "-"} · ${detalle.habitacion?.tipo || "Sin tipo"}`} />
+            <InfoItem label="Piso" value={detalle.habitacion?.piso || "-"} />
+            <InfoItem label="Entrada" value={formatDateShort(detalle.fecha_entrada)} />
+            <InfoItem label="Salida" value={formatDateShort(detalle.fecha_salida)} />
+            <InfoItem label="Huéspedes" value={`${detalle.adultos} adulto${detalle.adultos !== 1 ? "s" : ""}, ${detalle.ninos} niño${detalle.ninos !== 1 ? "s" : ""}`} />
+            <InfoItem label="Total habitación" value={formatCurrency(detalle.total || 0)} />
+          </div>
+
+          <div className="rounded-xl border p-4">
+            <h4 className="text-sm font-semibold">Datos del huésped</h4>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <InfoItem label="Documento" value={`${detalle.huesped?.tipo_documento || "Doc."}: ${detalle.huesped?.numero_documento || "-"}`} />
+              <InfoItem label="Teléfono" value={detalle.huesped?.telefono || "-"} />
+              <InfoItem label="Email" value={detalle.huesped?.email || "-"} />
+              <InfoItem label="Nacionalidad" value={detalle.huesped?.nacionalidad || "-"} />
+              <InfoItem label="Dirección" value={detalle.huesped?.direccion || "-"} className="sm:col-span-2" />
+            </div>
+          </div>
+
+          <div className={`rounded-xl border p-4 ${detalle.tiene_vehiculo ? "border-blue-200 bg-blue-50" : "bg-gray-50"}`}>
+            <h4 className="text-sm font-semibold">Vehículo</h4>
+            <p className="mt-2 text-sm text-gray-700">
+              {detalle.tiene_vehiculo ? detalle.detalle_vehiculo || "Tiene vehículo, sin detalle registrado." : "No tiene vehículo registrado."}
+            </p>
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <Button variant="outline" onClick={onClose}>Cerrar</Button>
+          </div>
+        </div>
+      ) : null}
+    </Dialog>
+  )
+}
+
+function InfoItem({ label, value, className = "" }: { label: string; value: string; className?: string }) {
+  return (
+    <div className={className}>
+      <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</p>
+      <p className="mt-1 text-sm font-medium text-gray-900">{value}</p>
+    </div>
+  )
+}
+
 function RentarHabitacionDialog({ room, onClose, onCreated }: { room: any | null; onClose: () => void; onCreated: () => void }) {
   const [step, setStep] = useState<"buscar" | "nuevo">("buscar")
   const [searchTerm, setSearchTerm] = useState("")
@@ -543,6 +747,8 @@ function RentarHabitacionDialog({ room, onClose, onCreated }: { room: any | null
     adultos: 1, ninos: 0,
     descuento: 0,
     adelanto: 0,
+    tiene_vehiculo: false,
+    detalle_vehiculo: "",
   })
 
   useEffect(() => {
@@ -557,7 +763,7 @@ function RentarHabitacionDialog({ room, onClose, onCreated }: { room: any | null
       setExtraMonto(0)
       const hoy = new Date().toISOString().split("T")[0]
       const maniana = new Date(Date.now() + 86400000).toISOString().split("T")[0]
-      setForm((f) => ({ ...f, fecha_entrada: hoy, fecha_salida: maniana }))
+      setForm((f) => ({ ...f, fecha_entrada: hoy, fecha_salida: maniana, tiene_vehiculo: false, detalle_vehiculo: "" }))
     }
   }, [room])
 
@@ -574,23 +780,45 @@ function RentarHabitacionDialog({ room, onClose, onCreated }: { room: any | null
   const adelanto = Math.min(form.adelanto || 0, totalFinal)
   const saldo = totalFinal - adelanto
 
-  async function handleSearch() {
-    if (!searchTerm.trim()) return
-    setSearching(true)
-    setError("")
-    try {
-      const results = await api.huespedes.listar(searchTerm)
-      setGuestResults(results)
-    } catch (err: any) {
-      setError(err.message)
-    } finally {
+  useEffect(() => {
+    if (!room || step !== "buscar") return
+
+    const term = searchTerm.trim()
+    if (!term) {
+      setGuestResults([])
       setSearching(false)
+      return
     }
-  }
+
+    let active = true
+    setSearching(true)
+    const timer = window.setTimeout(() => {
+      api.huespedes.listar(term)
+        .then((results) => {
+          if (active) setGuestResults(results)
+        })
+        .catch((err: any) => {
+          if (active) setError(err.message)
+        })
+        .finally(() => {
+          if (active) setSearching(false)
+        })
+    }, 350)
+
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
+  }, [room, searchTerm, step])
 
   async function handleSubmit() {
     if (!room) return
     setError("")
+
+    if (room.estado_limpieza !== "LIMPIA") {
+      setError("Esta habitación no se puede rentar porque no está limpia")
+      return
+    }
 
     if (step === "buscar" && !selectedGuest) {
       setError("Selecciona un huésped o crea uno nuevo")
@@ -604,6 +832,11 @@ function RentarHabitacionDialog({ room, onClose, onCreated }: { room: any | null
 
     if (form.fecha_salida <= form.fecha_entrada) {
       setError("La fecha de salida debe ser posterior a la entrada")
+      return
+    }
+
+    if (form.tiene_vehiculo && !form.detalle_vehiculo.trim()) {
+      setError("Indica el detalle del vehículo")
       return
     }
 
@@ -627,10 +860,30 @@ function RentarHabitacionDialog({ room, onClose, onCreated }: { room: any | null
         setError(err.message)
         return
       }
+    } else if (selectedGuest) {
+      if (!selectedGuest.nombres || !selectedGuest.apellidos) {
+        setError("Completa nombre y apellidos del huésped")
+        return
+      }
     }
 
     setSaving(true)
     try {
+      if (step === "buscar" && selectedGuest) {
+        guest = await api.huespedes.actualizar(selectedGuest.id, {
+          nombres: selectedGuest.nombres,
+          apellidos: selectedGuest.apellidos,
+          tipo_documento: selectedGuest.tipo_documento || undefined,
+          numero_documento: selectedGuest.numero_documento || undefined,
+          telefono: selectedGuest.telefono || undefined,
+          email: selectedGuest.email || undefined,
+          nacionalidad: selectedGuest.nacionalidad || undefined,
+          direccion: selectedGuest.direccion || undefined,
+          fecha_nacimiento: selectedGuest.fecha_nacimiento || undefined,
+          notas: selectedGuest.notas || undefined,
+        })
+      }
+
       const reserva = await api.reservas.crear({
         huesped_id: guest.id,
         tipo_habitacion_id: room.tipo_habitacion_id,
@@ -641,6 +894,8 @@ function RentarHabitacionDialog({ room, onClose, onCreated }: { room: any | null
         ninos: form.ninos,
         descuento: descuento,
         origen: "Walk-in",
+        tiene_vehiculo: form.tiene_vehiculo,
+        detalle_vehiculo: form.tiene_vehiculo ? form.detalle_vehiculo : undefined,
       })
 
       if (extra > 0 && extraDesc) {
@@ -675,7 +930,7 @@ function RentarHabitacionDialog({ room, onClose, onCreated }: { room: any | null
   const inputCls = "w-full h-10 px-3 rounded-md border border-gray-300 text-sm"
 
   return (
-    <Dialog open={!!room} onClose={onClose} title={`Rentar Hab. ${room?.numero}`} className="max-w-xl">
+    <Dialog open={!!room} onClose={onClose} title={`Rentar Hab. ${room?.numero}`} className="max-w-4xl">
       {room && (
         <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
           <div className="flex items-center justify-between bg-blue-50 p-3 rounded-md">
@@ -707,9 +962,10 @@ function RentarHabitacionDialog({ room, onClose, onCreated }: { room: any | null
               <label className="text-sm font-medium block">Huésped</label>
               <div className="flex gap-2">
                 <Input placeholder="Buscar por nombre, doc. o email..." value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleSearch()} />
-                <Button size="sm" variant="outline" onClick={handleSearch} disabled={searching}>Buscar</Button>
+                  onChange={(e) => setSearchTerm(e.target.value)} />
+                <Button size="sm" variant="outline" onClick={() => { setStep("nuevo"); setSelectedGuest(null) }}>
+                  <Plus className="h-4 w-4 mr-1" /> Nuevo
+                </Button>
               </div>
 
               {searching && <p className="text-xs text-gray-500">Buscando...</p>}
@@ -728,15 +984,65 @@ function RentarHabitacionDialog({ room, onClose, onCreated }: { room: any | null
               )}
 
               {selectedGuest && (
-                <div className="bg-green-50 p-2 rounded-md text-sm flex items-center justify-between">
-                  <span>✓ {selectedGuest.nombres} {selectedGuest.apellidos}</span>
-                  <button onClick={() => setSelectedGuest(null)} className="text-xs text-red-600 hover:underline">Quitar</button>
+                <div className="rounded-xl border border-green-200 bg-green-50 p-4 text-sm">
+                  <div className="mb-3 flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-green-900">Cliente seleccionado</p>
+                      <p className="text-xs text-green-700">Revisa y corrige sus datos antes de hospedar o reservar.</p>
+                    </div>
+                    <button onClick={() => setSelectedGuest(null)} className="text-xs font-medium text-red-600 hover:underline">Quitar</button>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium">Nombres *</label>
+                      <Input value={selectedGuest.nombres || ""} onChange={(e) => setSelectedGuest({ ...selectedGuest, nombres: e.target.value })} />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium">Apellidos *</label>
+                      <Input value={selectedGuest.apellidos || ""} onChange={(e) => setSelectedGuest({ ...selectedGuest, apellidos: e.target.value })} />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium">Tipo Doc.</label>
+                      <select className={inputCls} value={selectedGuest.tipo_documento || ""} onChange={(e) => setSelectedGuest({ ...selectedGuest, tipo_documento: e.target.value })}>
+                        <option value="">Sin especificar</option>
+                        <option value="DNI">DNI</option>
+                        <option value="Pasaporte">Pasaporte</option>
+                        <option value="Cédula">Cédula</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium">N° Documento</label>
+                      <Input value={selectedGuest.numero_documento || ""} onChange={(e) => setSelectedGuest({ ...selectedGuest, numero_documento: e.target.value })} />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium">Teléfono</label>
+                      <Input value={selectedGuest.telefono || ""} onChange={(e) => setSelectedGuest({ ...selectedGuest, telefono: e.target.value })} />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium">Email</label>
+                      <Input type="email" value={selectedGuest.email || ""} onChange={(e) => setSelectedGuest({ ...selectedGuest, email: e.target.value })} />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium">Nacionalidad</label>
+                      <Input value={selectedGuest.nacionalidad || ""} onChange={(e) => setSelectedGuest({ ...selectedGuest, nacionalidad: e.target.value })} />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium">Fecha nacimiento</label>
+                      <Input type="date" value={selectedGuest.fecha_nacimiento || ""} onChange={(e) => setSelectedGuest({ ...selectedGuest, fecha_nacimiento: e.target.value })} />
+                    </div>
+                    <div className="space-y-1 md:col-span-2">
+                      <label className="text-xs font-medium">Dirección</label>
+                      <Input value={selectedGuest.direccion || ""} onChange={(e) => setSelectedGuest({ ...selectedGuest, direccion: e.target.value })} />
+                    </div>
+                    <div className="space-y-1 md:col-span-2">
+                      <label className="text-xs font-medium">Notas</label>
+                      <Input value={selectedGuest.notas || ""} onChange={(e) => setSelectedGuest({ ...selectedGuest, notas: e.target.value })} />
+                    </div>
+                  </div>
                 </div>
               )}
 
-              <Button variant="outline" size="sm" onClick={() => { setStep("nuevo"); setSelectedGuest(null) }}>
-                <Plus className="h-4 w-4 mr-1" /> Nuevo huésped
-              </Button>
             </div>
           )}
 
@@ -796,6 +1102,37 @@ function RentarHabitacionDialog({ room, onClose, onCreated }: { room: any | null
               <label className="text-sm font-medium">Niños</label>
               <Input type="number" min={0} value={form.ninos} onChange={(e) => setForm({ ...form, ninos: parseInt(e.target.value) || 0 })} />
             </div>
+          </div>
+
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-medium">¿El huésped anda vehículo?</p>
+                <p className="text-xs text-gray-500">Se guardará en la estadía para consulta desde habitación ocupada.</p>
+              </div>
+              <div className="flex rounded-md bg-white p-1 text-sm ring-1 ring-gray-200">
+                <button
+                  type="button"
+                  className={`rounded px-4 py-1.5 font-medium ${!form.tiene_vehiculo ? "bg-blue-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
+                  onClick={() => setForm({ ...form, tiene_vehiculo: false, detalle_vehiculo: "" })}
+                >No</button>
+                <button
+                  type="button"
+                  className={`rounded px-4 py-1.5 font-medium ${form.tiene_vehiculo ? "bg-blue-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
+                  onClick={() => setForm({ ...form, tiene_vehiculo: true })}
+                >Sí</button>
+              </div>
+            </div>
+            {form.tiene_vehiculo && (
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Detalle del vehículo *</label>
+                <Input
+                  placeholder="Ej: Toyota Corolla blanco, placa ABC-123"
+                  value={form.detalle_vehiculo}
+                  onChange={(e) => setForm({ ...form, detalle_vehiculo: e.target.value })}
+                />
+              </div>
+            )}
           </div>
 
           <div className="border-t pt-3 space-y-3">

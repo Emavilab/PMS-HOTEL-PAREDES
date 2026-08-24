@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, date, timezone
-from sqlalchemy import Column, String, Text, Float, Integer, Date, DateTime, ForeignKey
+from sqlalchemy import Column, String, Text, Float, Integer, Date, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
@@ -30,6 +30,8 @@ class Reserva(Base):
     descuento: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     impuesto: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     total: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    tiene_vehiculo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    detalle_vehiculo: Mapped[str] = mapped_column(Text, nullable=True)
     solicitudes_especiales: Mapped[str] = mapped_column(Text, nullable=True)
     creado_en: Mapped[datetime] = mapped_column(
         "created_at", DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)

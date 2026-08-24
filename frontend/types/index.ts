@@ -59,6 +59,8 @@ export interface TareaLimpieza {
   iniciada_en: string | null
   completada_en: string | null
   numero_habitacion?: string
+  estado_limpieza?: string | null
+  estado_operativo?: string | null
   creado_en: string
   actualizado_en: string
 }
@@ -68,6 +70,7 @@ export interface ReservaLista {
   codigo_confirmacion: string
   huesped_nombre: string
   numero_habitacion?: string | null
+  tipo_habitacion_nombre?: string | null
   fecha_entrada: string
   fecha_salida: string
   estado: string

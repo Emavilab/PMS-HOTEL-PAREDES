@@ -33,12 +33,12 @@ export { Badge, badgeVariants }
 
 export function statusBadge(status: string) {
   const map: Record<string, { variant: "success" | "warning" | "danger" | "info" | "purple" | "default"; label: string }> = {
-    PENDIENTE: { variant: "warning", label: "Pendiente" },
-    CONFIRMADA: { variant: "info", label: "Confirmada" },
-    CHECKED_IN: { variant: "success", label: "Check-in" },
-    CHECKED_OUT: { variant: "default", label: "Check-out" },
+    PENDIENTE: { variant: "warning", label: "Reservación sin confirmar" },
+    CONFIRMADA: { variant: "info", label: "Reservación confirmada" },
+    CHECKED_IN: { variant: "success", label: "Ingreso" },
+    CHECKED_OUT: { variant: "default", label: "Hospedaje terminado" },
     CANCELADA: { variant: "danger", label: "Cancelada" },
-    NO_SHOW: { variant: "danger", label: "No Show" },
+    NO_SHOW: { variant: "danger", label: "No ingreso" },
     DISPONIBLE: { variant: "success", label: "Disponible" },
     OCUPADA: { variant: "warning", label: "Ocupada" },
     MANTENIMIENTO: { variant: "danger", label: "Mantenimiento" },
@@ -46,6 +46,7 @@ export function statusBadge(status: string) {
     LIMPIA: { variant: "success", label: "Limpia" },
     SUCIA: { variant: "warning", label: "Sucia" },
     EN_PROGRESO: { variant: "info", label: "En Progreso" },
+    COMPLETADA: { variant: "success", label: "Completada" },
     INSPECCIONADA: { variant: "purple", label: "Inspeccionada" },
     ABIERTA: { variant: "success", label: "Abierta" },
     CERRADA: { variant: "default", label: "Cerrada" },

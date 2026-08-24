@@ -94,13 +94,72 @@ def habitaciones_ocupadas(
         resultado.append({
             "reserva_id": r.id,
             "codigo_confirmacion": r.codigo_confirmacion,
+            "habitacion_id": r.habitacion_id,
             "huesped": nombre,
             "habitacion_numero": num_hab,
             "habitacion_tipo": tipo_hab,
             "fecha_entrada": str(r.fecha_entrada),
             "fecha_salida": str(r.fecha_salida),
+            "adultos": r.adultos,
+            "ninos": r.ninos,
+            "total": r.total,
+            "tiene_vehiculo": r.tiene_vehiculo,
+            "detalle_vehiculo": r.detalle_vehiculo,
         })
     return resultado
+
+
+@router.get("/habitaciones/{habitacion_id}/ocupacion", response_model=dict)
+def detalle_ocupacion_habitacion(
+    habitacion_id: str,
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(PersonalUsuario),
+):
+    reserva = (
+        db.query(Reserva)
+        .filter(Reserva.habitacion_id == habitacion_id, Reserva.estado == "CHECKED_IN")
+        .first()
+    )
+    if not reserva:
+        raise HTTPException(status_code=404, detail="La habitacion no tiene una estadia activa")
+
+    huesped = reserva.huesped
+    habitacion = reserva.habitacion_ref
+    estadia = reserva.estadia
+
+    return {
+        "reserva_id": reserva.id,
+        "codigo_confirmacion": reserva.codigo_confirmacion,
+        "estado": reserva.estado,
+        "fecha_entrada": str(reserva.fecha_entrada),
+        "fecha_salida": str(reserva.fecha_salida),
+        "adultos": reserva.adultos,
+        "ninos": reserva.ninos,
+        "subtotal": reserva.subtotal,
+        "descuento": reserva.descuento,
+        "impuesto": reserva.impuesto,
+        "total": reserva.total,
+        "tiene_vehiculo": reserva.tiene_vehiculo,
+        "detalle_vehiculo": reserva.detalle_vehiculo,
+        "check_in_real": estadia.check_in_real.isoformat() if estadia and estadia.check_in_real else None,
+        "habitacion": {
+            "id": habitacion.id if habitacion else None,
+            "numero": habitacion.numero if habitacion else None,
+            "piso": habitacion.piso if habitacion else None,
+            "tipo": habitacion.tipo_habitacion.nombre if habitacion and habitacion.tipo_habitacion else None,
+            "estado_limpieza": habitacion.estado_limpieza if habitacion else None,
+        },
+        "huesped": {
+            "id": huesped.id if huesped else None,
+            "nombre": f"{huesped.nombres} {huesped.apellidos}" if huesped else "N/A",
+            "tipo_documento": huesped.tipo_documento if huesped else None,
+            "numero_documento": huesped.numero_documento if huesped else None,
+            "telefono": huesped.telefono if huesped else None,
+            "email": huesped.email if huesped else None,
+            "nacionalidad": huesped.nacionalidad if huesped else None,
+            "direccion": huesped.direccion if huesped else None,
+        },
+    }
 
 
 @router.post("/reservas/{reserva_id}/consumos", response_model=list[ConsumoResponse], status_code=201)

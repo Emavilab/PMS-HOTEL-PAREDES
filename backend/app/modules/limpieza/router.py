@@ -38,7 +38,7 @@ def listar_tareas_limpieza(
         consulta = consulta.filter(TareaLimpieza.fecha_tarea == fecha)
 
     tareas = consulta.order_by(TareaLimpieza.fecha_tarea.desc(), TareaLimpieza.prioridad).all()
-    return [TareaLimpiezaResponse.model_validate(t) for t in tareas]
+    return [_tarea_response(t) for t in tareas]
 
 
 @router.post("", response_model=TareaLimpiezaResponse, status_code=status.HTTP_201_CREATED)
@@ -57,6 +57,10 @@ def crear_tarea_limpieza(
 
     tarea = TareaLimpieza(**datos.model_dump())
     db.add(tarea)
+
+    if habitacion.estado_operativo != "OCUPADA":
+        habitacion.estado_limpieza = "SUCIA"
+
     db.commit()
     db.refresh(tarea)
 
@@ -70,7 +74,7 @@ def crear_tarea_limpieza(
         direccion_ip=request.client.host if request.client else None,
     )
 
-    return TareaLimpiezaResponse.model_validate(tarea)
+    return _tarea_response(tarea)
 
 
 @router.patch("/{tarea_id}", response_model=TareaLimpiezaResponse)
@@ -99,6 +103,13 @@ def actualizar_tarea_limpieza(
         nuevo_estado = datos_actualizar["estado"]
         if nuevo_estado == "EN_PROGRESO" and tarea.estado != "EN_PROGRESO":
             tarea.iniciada_en = datetime.now(timezone.utc)
+            habitacion = (
+                db.query(Habitacion)
+                .filter(Habitacion.id == tarea.habitacion_id)
+                .first()
+            )
+            if habitacion and habitacion.estado_operativo != "OCUPADA":
+                habitacion.estado_limpieza = "EN_PROGRESO"
         elif nuevo_estado == "COMPLETADA" and tarea.estado != "COMPLETADA":
             tarea.completada_en = datetime.now(timezone.utc)
             habitacion = (
@@ -129,4 +140,13 @@ def actualizar_tarea_limpieza(
         direccion_ip=request.client.host if request.client else None,
     )
 
-    return TareaLimpiezaResponse.model_validate(tarea)
+    return _tarea_response(tarea)
+
+
+def _tarea_response(tarea: TareaLimpieza) -> TareaLimpiezaResponse:
+    resp = TareaLimpiezaResponse.model_validate(tarea)
+    if tarea.habitacion:
+        resp.numero_habitacion = tarea.habitacion.numero
+        resp.estado_limpieza = tarea.habitacion.estado_limpieza
+        resp.estado_operativo = tarea.habitacion.estado_operativo
+    return resp

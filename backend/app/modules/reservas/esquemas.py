@@ -17,6 +17,8 @@ class ReservaCrear(BaseModel):
     ninos: int = 0
     descuento: float = 0
     origen: Optional[str] = None
+    tiene_vehiculo: bool = False
+    detalle_vehiculo: Optional[str] = None
     solicitudes_especiales: Optional[str] = None
 
 
@@ -34,6 +36,8 @@ class ReservaActualizar(BaseModel):
     descuento: Optional[float] = None
     impuesto: Optional[float] = None
     total: Optional[float] = None
+    tiene_vehiculo: Optional[bool] = None
+    detalle_vehiculo: Optional[str] = None
     solicitudes_especiales: Optional[str] = None
 
 
@@ -54,6 +58,8 @@ class ReservaResponse(BaseModel):
     descuento: float
     impuesto: float
     total: float
+    tiene_vehiculo: bool = False
+    detalle_vehiculo: Optional[str] = None
     solicitudes_especiales: Optional[str] = None
     creado_en: datetime
     actualizado_en: datetime
@@ -68,6 +74,8 @@ class ReservaListaResponse(BaseModel):
     id: str
     codigo_confirmacion: str
     huesped_nombre: Optional[str] = None
+    numero_habitacion: Optional[str] = None
+    tipo_habitacion_nombre: Optional[str] = None
     fecha_entrada: date
     fecha_salida: date
     estado: str

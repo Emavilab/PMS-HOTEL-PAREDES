@@ -4,6 +4,8 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from app.core.config import settings
+from sqlalchemy import inspect, text
+
 from app.core.database import Base, engine
 from app.modules.auth.router import router as auth_router
 from app.modules.usuarios.router import router as usuarios_router
@@ -56,6 +58,23 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 @app.on_event("startup")
 def on_startup():
     Base.metadata.create_all(bind=engine)
+    agregar_columnas_reserva_si_faltan()
+
+
+def agregar_columnas_reserva_si_faltan():
+    columnas = {col["name"] for col in inspect(engine).get_columns("reservas")}
+    alteraciones = []
+    if "tiene_vehiculo" not in columnas:
+        alteraciones.append("ALTER TABLE reservas ADD COLUMN tiene_vehiculo BOOLEAN NOT NULL DEFAULT 0")
+    if "detalle_vehiculo" not in columnas:
+        alteraciones.append("ALTER TABLE reservas ADD COLUMN detalle_vehiculo TEXT")
+
+    if not alteraciones:
+        return
+
+    with engine.begin() as conn:
+        for alteracion in alteraciones:
+            conn.execute(text(alteracion))
 
 
 @app.get("/health")

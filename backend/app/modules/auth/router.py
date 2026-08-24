@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
+import bcrypt
 
 from app.core.database import get_db
 from app.core.seguridad import crear_token_acceso
@@ -18,16 +19,22 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 @router.post("/login", response_model=TokenResponse)
 def login(datos: LoginRequest, db: Session = Depends(get_db)):
     usuario = db.query(Usuario).filter(Usuario.email == datos.email).first()
+    # (previously logged input for debugging; removed)
     if not usuario:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciales invalidas",
         )
-    if not pwd_context.verify(datos.contrasena, usuario.contrasena):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Credenciales invalidas",
-        )
+    try:
+        # Use bcrypt.checkpw directly to avoid passlib backend detection issues
+        if not bcrypt.checkpw(datos.contrasena.encode("utf-8"), usuario.contrasena.encode("utf-8")):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Credenciales invalidas",
+            )
+    except ValueError as e:
+        # bcrypt may raise ValueError for invalid inputs; return a clear 400 error
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if usuario.estado != "activo":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

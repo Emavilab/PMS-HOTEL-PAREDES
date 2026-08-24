@@ -10,6 +10,9 @@ from app.core.database import get_db
 from app.core.dependencies import PersonalUsuario
 from app.common.auditoria import crear_registro_auditoria
 from app.modules.reservas.modelos import Reserva
+from app.modules.estadias.modelos import Estadia
+from app.modules.facturacion.modelos import Cargo, Pago
+from app.modules.ventas.modelos import Consumo
 from app.modules.reservas.esquemas import (
     ReservaCrear,
     ReservaActualizar,
@@ -83,6 +86,8 @@ def listar_reservas(
             id=r.id,
             codigo_confirmacion=r.codigo_confirmacion,
             huesped_nombre=nombre,
+            numero_habitacion=r.habitacion_ref.numero if r.habitacion_ref else None,
+            tipo_habitacion_nombre=r.tipo_habitacion_ref.nombre if r.tipo_habitacion_ref else None,
             fecha_entrada=r.fecha_entrada,
             fecha_salida=r.fecha_salida,
             estado=r.estado,
@@ -165,6 +170,8 @@ def crear_reserva(
         descuento=descuento,
         impuesto=impuesto,
         total=total,
+        tiene_vehiculo=datos.tiene_vehiculo,
+        detalle_vehiculo=datos.detalle_vehiculo if datos.tiene_vehiculo else None,
         solicitudes_especiales=datos.solicitudes_especiales,
     )
     db.add(reserva)
@@ -235,6 +242,12 @@ def actualizar_reserva(
         )
 
     nueva_habitacion_id = datos.habitacion_id or reserva.habitacion_id
+    if datos.estado == "CHECKED_IN" and reserva.estado != "CHECKED_IN":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Para marcar ingreso usa check-in y asigna una habitacion disponible",
+        )
+
     if nueva_habitacion_id:
         if _tiene_conflicto(
             db,
@@ -309,6 +322,50 @@ def cancelar_reserva(
     )
 
     return ReservaResponse.model_validate(reserva)
+
+
+@router.delete("/{reserva_id}", status_code=status.HTTP_204_NO_CONTENT)
+def eliminar_reserva(
+    reserva_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario_actual: Usuario = Depends(PersonalUsuario),
+):
+    reserva = db.query(Reserva).filter(Reserva.id == reserva_id).first()
+    if not reserva:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Reserva no encontrada",
+        )
+    if reserva.estado == "CHECKED_IN":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No se puede eliminar una reserva con hospedaje activo",
+        )
+
+    valores_anteriores = {
+        "codigo_confirmacion": reserva.codigo_confirmacion,
+        "estado": reserva.estado,
+        "fecha_entrada": str(reserva.fecha_entrada),
+        "fecha_salida": str(reserva.fecha_salida),
+    }
+
+    db.query(Consumo).filter(Consumo.reserva_id == reserva_id).delete()
+    db.query(Cargo).filter(Cargo.reserva_id == reserva_id).delete()
+    db.query(Pago).filter(Pago.reserva_id == reserva_id).delete()
+    db.query(Estadia).filter(Estadia.reserva_id == reserva_id).delete()
+    db.delete(reserva)
+
+    crear_registro_auditoria(
+        db=db,
+        usuario_id=usuario_actual.id,
+        accion="ELIMINAR",
+        tipo_entidad="Reserva",
+        entidad_id=reserva_id,
+        valores_anteriores=valores_anteriores,
+        direccion_ip=request.client.host if request.client else None,
+    )
+    db.commit()
 
 
 @router_disponibilidad.get("", response_model=DisponibilidadResponse)

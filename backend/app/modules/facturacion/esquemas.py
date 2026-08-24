@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 
 class CargoCrear(BaseModel):
-    reserva_id: str
+    reserva_id: Optional[str] = None
     descripcion: str
     cantidad: int = 1
     precio_unitario: float
@@ -28,7 +28,7 @@ class CargoResponse(BaseModel):
 
 
 class PagoCrear(BaseModel):
-    reserva_id: str
+    reserva_id: Optional[str] = None
     monto: float
     metodo_pago: str
     referencia: Optional[str] = None

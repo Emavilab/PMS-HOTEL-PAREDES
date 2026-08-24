@@ -32,6 +32,9 @@ class TareaLimpiezaResponse(BaseModel):
     notas: Optional[str] = None
     iniciada_en: Optional[datetime] = None
     completada_en: Optional[datetime] = None
+    numero_habitacion: Optional[str] = None
+    estado_limpieza: Optional[str] = None
+    estado_operativo: Optional[str] = None
     creado_en: datetime
     actualizado_en: datetime
 

@@ -30,6 +30,10 @@ async function peticion<T>(
     throw new Error(msg)
   }
 
+  if (res.status === 204) {
+    return undefined as T
+  }
+
   return res.json()
 }
 
@@ -90,6 +94,8 @@ export const api = {
       peticion<any>(`/reservas/${id}`, { method: "PUT", body: JSON.stringify(datos) }),
     cancelar: (id: string) =>
       peticion<any>(`/reservas/${id}/cancelar`, { method: "POST" }),
+    eliminar: (id: string) =>
+      peticion<void>(`/reservas/${id}`, { method: "DELETE" }),
     checkIn: (id: string, habitacionId: string) =>
       peticion<any>(`/reservas/${id}/check-in`, {
         method: "POST",
@@ -216,6 +222,8 @@ export const api = {
     eliminarProducto: (id: string) =>
       peticion<any>(`/ventas/productos/${id}`, { method: "DELETE" }),
     ocupadas: () => peticion<any[]>("/ventas/ocupadas"),
+    detalleOcupacion: (habitacionId: string) =>
+      peticion<any>(`/ventas/habitaciones/${habitacionId}/ocupacion`),
     agregarConsumos: (reservaId: string, datos: any[]) =>
       peticion<any[]>(`/ventas/reservas/${reservaId}/consumos`, {
         method: "POST", body: JSON.stringify(datos),
