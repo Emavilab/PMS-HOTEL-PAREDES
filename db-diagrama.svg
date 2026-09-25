@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1100" viewBox="0 0 1600 1100">
+  <defs>
+    <style>
+      .title { font: 700 28px Arial, sans-serif; fill: #1f2937; }
+      .label { font: 600 15px Arial, sans-serif; fill: #0f172a; }
+      .small { font: 12px Arial, sans-serif; fill: #334155; }
+      .box { fill: #f8fafc; stroke: #334155; stroke-width: 2; rx: 12; }
+      .core { fill: #dbeafe; stroke: #1d4ed8; stroke-width: 2.5; rx: 12; }
+      .arrow { stroke: #475569; stroke-width: 2.2; fill: none; marker-end: url(#arrowhead); }
+      .dashed { stroke-dasharray: 7 7; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="8" refX="8" refY="4" orient="auto">
+      <polygon points="0 0, 10 4, 0 8" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <text x="800" y="52" text-anchor="middle" class="title">Diagrama ER - PMS Hotel Paredes</text>
+
+  <!-- Centro: Reservas -->
+  <rect x="650" y="120" width="300" height="180" class="core"/>
+  <text x="800" y="165" text-anchor="middle" class="label">RESERVAS</text>
+  <text x="800" y="190" text-anchor="middle" class="small">id, huesped_id, habitacion_id</text>
+  <text x="800" y="210" text-anchor="middle" class="small">tipo_habitacion_id, creada_por</text>
+  <text x="800" y="230" text-anchor="middle" class="small">fecha_entrada, fecha_salida</text>
+  <text x="800" y="250" text-anchor="middle" class="small">subtotal, impuesto, total, estado</text>
+
+  <!-- Huespedes -->
+  <rect x="80" y="260" width="220" height="140" class="box"/>
+  <text x="190" y="300" text-anchor="middle" class="label">HUESPEDES</text>
+  <text x="190" y="325" text-anchor="middle" class="small">id</text>
+  <text x="190" y="345" text-anchor="middle" class="small">nombres, apellidos</text>
+  <text x="190" y="365" text-anchor="middle" class="small">telefono, email</text>
+
+  <!-- Usuarios -->
+  <rect x="1280" y="260" width="220" height="150" class="box"/>
+  <text x="1390" y="300" text-anchor="middle" class="label">USUARIOS</text>
+  <text x="1390" y="325" text-anchor="middle" class="small">id</text>
+  <text x="1390" y="345" text-anchor="middle" class="small">email, nombre_completo</text>
+  <text x="1390" y="365" text-anchor="middle" class="small">rol, estado</text>
+
+  <!-- Tipos Habitacion -->
+  <rect x="380" y="420" width="260" height="150" class="box"/>
+  <text x="510" y="460" text-anchor="middle" class="label">TIPOS_HABITACION</text>
+  <text x="510" y="485" text-anchor="middle" class="small">id</text>
+  <text x="510" y="505" text-anchor="middle" class="small">codigo, nombre</text>
+  <text x="510" y="525" text-anchor="middle" class="small">capacidad, precio_base</text>
+
+  <!-- Habitaciones -->
+  <rect x="960" y="420" width="260" height="150" class="box"/>
+  <text x="1090" y="460" text-anchor="middle" class="label">HABITACIONES</text>
+  <text x="1090" y="485" text-anchor="middle" class="small">id</text>
+  <text x="1090" y="505" text-anchor="middle" class="small">tipo_habitacion_id</text>
+  <text x="1090" y="525" text-anchor="middle" class="small">numero, piso, estado</text>
+
+  <!-- Estadias -->
+  <rect x="40" y="640" width="220" height="140" class="box"/>
+  <text x="150" y="680" text-anchor="middle" class="label">ESTADIAS</text>
+  <text x="150" y="705" text-anchor="middle" class="small">id, reserva_id</text>
+  <text x="150" y="725" text-anchor="middle" class="small">check_in_real</text>
+  <text x="150" y="745" text-anchor="middle" class="small">check_out_real, estado</text>
+
+  <!-- Cargos -->
+  <rect x="320" y="660" width="220" height="140" class="box"/>
+  <text x="430" y="700" text-anchor="middle" class="label">CARGOS</text>
+  <text x="430" y="725" text-anchor="middle" class="small">id, reserva_id</text>
+  <text x="430" y="745" text-anchor="middle" class="small">descripcion, total</text>
+
+  <!-- Pagos -->
+  <rect x="600" y="660" width="220" height="140" class="box"/>
+  <text x="710" y="700" text-anchor="middle" class="label">PAGOS</text>
+  <text x="710" y="725" text-anchor="middle" class="small">id, reserva_id</text>
+  <text x="710" y="745" text-anchor="middle" class="small">monto, metodo_pago</text>
+
+  <!-- Facturas -->
+  <rect x="880" y="660" width="220" height="140" class="box"/>
+  <text x="990" y="700" text-anchor="middle" class="label">FACTURAS</text>
+  <text x="990" y="725" text-anchor="middle" class="small">id, reserva_id</text>
+  <text x="990" y="745" text-anchor="middle" class="small">numero, fecha_emision</text>
+
+  <!-- Productos -->
+  <rect x="1160" y="660" width="220" height="140" class="box"/>
+  <text x="1270" y="700" text-anchor="middle" class="label">PRODUCTOS</text>
+  <text x="1270" y="725" text-anchor="middle" class="small">id</text>
+  <text x="1270" y="745" text-anchor="middle" class="small">nombre, precio_unitario</text>
+
+  <!-- Consumos -->
+  <rect x="1180" y="860" width="220" height="140" class="box"/>
+  <text x="1290" y="900" text-anchor="middle" class="label">CONSUMOS</text>
+  <text x="1290" y="925" text-anchor="middle" class="small">id, reserva_id</text>
+  <text x="1290" y="945" text-anchor="middle" class="small">producto_id, cantidad</text>
+  <text x="1290" y="965" text-anchor="middle" class="small">total, pagado</text>
+
+  <!-- Tareas limpieza -->
+  <rect x="700" y="860" width="250" height="150" class="box"/>
+  <text x="825" y="900" text-anchor="middle" class="label">TAREAS_LIMPIEZA</text>
+  <text x="825" y="925" text-anchor="middle" class="small">id, habitacion_id</text>
+  <text x="825" y="945" text-anchor="middle" class="small">asignada_a, fecha_tarea</text>
+  <text x="825" y="965" text-anchor="middle" class="small">tipo_limpieza, estado</text>
+
+  <!-- Auditoria -->
+  <rect x="410" y="900" width="240" height="130" class="box"/>
+  <text x="530" y="940" text-anchor="middle" class="label">REGISTROS_AUDITORIA</text>
+  <text x="530" y="965" text-anchor="middle" class="small">id, usuario_id</text>
+  <text x="530" y="985" text-anchor="middle" class="small">accion, entidad_id</text>
+
+  <!-- Caja -->
+  <rect x="1050" y="100" width="260" height="140" class="box"/>
+  <text x="1180" y="140" text-anchor="middle" class="label">SESIONES_CAJA</text>
+  <text x="1180" y="165" text-anchor="middle" class="small">id, usuario_id</text>
+  <text x="1180" y="185" text-anchor="middle" class="small">monto_apertura, diferencia</text>
+  <text x="1180" y="205" text-anchor="middle" class="small">estado</text>
+
+  <!-- Lines -->
+  <path d="M 300 330 L 650 220" class="arrow"/>
+  <path d="M 1300 330 L 950 220" class="arrow"/>
+  <path d="M 650 300 L 510 420" class="arrow dashed"/>
+  <path d="M 950 300 L 1090 420" class="arrow dashed"/>
+  <path d="M 650 170 L 1050 170" class="arrow dashed"/>
+
+  <path d="M 650 240 L 260 330" class="arrow"/>
+  <path d="M 650 240 L 1280 330" class="arrow"/>
+
+  <path d="M 650 310 L 260 680" class="arrow"/>
+  <path d="M 650 290 L 540 660" class="arrow"/>
+  <path d="M 800 300 L 710 660" class="arrow"/>
+  <path d="M 860 300 L 990 660" class="arrow"/>
+  <path d="M 950 300 L 1270 660" class="arrow"/>
+
+  <path d="M 1090 570 L 825 860" class="arrow"/>
+  <path d="M 650 300 L 530 900" class="arrow"/>
+
+  <path d="M 950 300 L 1180 170" class="arrow"/>
+  <path d="M 790 300 L 1290 860" class="arrow"/>
+  <path d="M 820 300 L 1270 660" class="arrow"/>
+
+  <!-- Footer note -->
+  <text x="800" y="1055" text-anchor="middle" class="small">Entidad central: RESERVAS. Relación principal con huésped, habitación, usuario y operaciones del hotel.</text>
+</svg>

@@ -2,14 +2,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
+from datetime import datetime, timezone
+import uuid
 
 from app.core.config import settings
 from sqlalchemy import inspect, text
 
-from app.core.database import Base, engine
+from app.core.database import Base, engine, SessionLocal
 from app.modules.auth.router import router as auth_router
 from app.modules.usuarios.router import router as usuarios_router
-from app.modules.habitaciones.router import router_tipos, router_habitaciones
+from app.modules.habitaciones.router import router_tipos, router_habitaciones, router_pisos, router_pagos
 from app.modules.huespedes.router import router as huespedes_router
 from app.modules.reservas.router import router as reservas_router, router_disponibilidad
 from app.modules.estadias.router import router as estadias_router
@@ -19,6 +21,7 @@ from app.modules.caja.router import router as caja_router
 from app.modules.reportes.router import router as reportes_router
 from app.modules.auditoria.router import router as auditoria_router
 from app.modules.ventas.router import router as ventas_router
+from app.modules.ventas.modelos import Producto, CategoriaProducto
 from app.modules.configuracion.router import router as configuracion_router
 
 app = FastAPI(
@@ -38,6 +41,8 @@ app.include_router(auth_router)
 app.include_router(usuarios_router)
 app.include_router(router_tipos)
 app.include_router(router_habitaciones)
+app.include_router(router_pisos)
+app.include_router(router_pagos)
 app.include_router(huespedes_router)
 app.include_router(reservas_router)
 app.include_router(router_disponibilidad)
@@ -60,6 +65,8 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 def on_startup():
     Base.metadata.create_all(bind=engine)
     agregar_columnas_reserva_si_faltan()
+    migrar_pisos_habitaciones()
+    migrar_categorias_productos()
 
 
 def agregar_columnas_reserva_si_faltan():
@@ -72,12 +79,93 @@ def agregar_columnas_reserva_si_faltan():
     if "motivo_cancelacion" not in columnas:
         alteraciones.append("ALTER TABLE reservas ADD COLUMN motivo_cancelacion TEXT")
 
-    if not alteraciones:
+    if alteraciones:
+        with engine.begin() as conn:
+            for alteracion in alteraciones:
+                conn.execute(text(alteracion))
+
+    columnas_configuracion = {col["name"] for col in inspect(engine).get_columns("configuracion")}
+    if "impuesto_turistico" not in columnas_configuracion:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE configuracion ADD COLUMN impuesto_turistico FLOAT NOT NULL DEFAULT 10.0"
+            ))
+
+    columnas_usuarios = {col["name"] for col in inspect(engine).get_columns("usuarios")}
+    if "usuario" not in columnas_usuarios:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE usuarios ADD COLUMN usuario VARCHAR(100)"))
+            existentes = conn.execute(text("SELECT id, email FROM usuarios ORDER BY created_at, id")).all()
+            usados: set[str] = set()
+            for usuario_id, email in existentes:
+                base = str(email).split("@", 1)[0].lower()
+                candidato = base
+                sufijo = 2
+                while candidato in usados:
+                    candidato = f"{base}{sufijo}"
+                    sufijo += 1
+                usados.add(candidato)
+                conn.execute(text("UPDATE usuarios SET usuario = :usuario WHERE id = :id"), {"usuario": candidato, "id": usuario_id})
+    with engine.begin() as conn:
+        conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_usuarios_usuario ON usuarios (usuario)"))
+    if "permisos" not in columnas_usuarios:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE usuarios ADD COLUMN permisos TEXT DEFAULT '[]'"))
+
+    columnas_limpieza = {col["name"] for col in inspect(engine).get_columns("tareas_limpieza")}
+    if "tipo_limpieza" not in columnas_limpieza:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE tareas_limpieza ADD COLUMN tipo_limpieza VARCHAR(50) NOT NULL DEFAULT 'GENERAL'"
+            ))
+
+
+def migrar_pisos_habitaciones():
+    columnas_habitaciones = {col["name"] for col in inspect(engine).get_columns("habitaciones")}
+    if "piso_id" in columnas_habitaciones:
         return
 
     with engine.begin() as conn:
-        for alteracion in alteraciones:
-            conn.execute(text(alteracion))
+        conn.execute(text("ALTER TABLE habitaciones ADD COLUMN piso_id VARCHAR"))
+        pisos_legacy = conn.execute(
+            text("SELECT DISTINCT piso FROM habitaciones WHERE piso IS NOT NULL AND TRIM(piso) != ''")
+        ).scalars().all()
+
+        for nombre in pisos_legacy:
+            piso_id = conn.execute(
+                text("SELECT id FROM pisos WHERE nombre = :nombre"),
+                {"nombre": str(nombre)},
+            ).scalar_one_or_none()
+            if piso_id is None:
+                piso_id = str(uuid.uuid4())
+                ahora = datetime.now(timezone.utc)
+                conn.execute(
+                    text(
+                        "INSERT INTO pisos "
+                        "(id, nombre, estado, created_at, updated_at) "
+                        "VALUES (:id, :nombre, 'ACTIVO', :ahora, :ahora)"
+                    ),
+                    {"id": piso_id, "nombre": str(nombre), "ahora": ahora},
+                )
+
+            conn.execute(
+                text("UPDATE habitaciones SET piso_id = :piso_id WHERE piso = :nombre"),
+                {"piso_id": piso_id, "nombre": str(nombre)},
+            )
+
+
+def migrar_categorias_productos():
+    db = SessionLocal()
+    try:
+        nombres = db.query(Producto.categoria).filter(
+            Producto.categoria.isnot(None), Producto.categoria != ""
+        ).distinct().all()
+        for (nombre,) in nombres:
+            if not db.query(CategoriaProducto).filter(CategoriaProducto.nombre == nombre).first():
+                db.add(CategoriaProducto(nombre=nombre))
+        db.commit()
+    finally:
+        db.close()
 
 
 @app.get("/health")

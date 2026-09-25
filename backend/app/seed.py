@@ -1,6 +1,6 @@
 import uuid
 from datetime import date, timedelta
-from passlib.context import CryptContext
+import bcrypt
 from app.core.database import SessionLocal, engine, Base
 from app.modules.usuarios.modelos import Usuario
 from app.modules.auditoria.modelos import RegistroAuditoria
@@ -14,7 +14,8 @@ from app.modules.caja.modelos import SesionCaja
 from app.modules.configuracion.modelos import HotelConfig
 from app.modules.ventas.modelos import Consumo
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def seed():
@@ -28,8 +29,9 @@ def seed():
 
     admin = Usuario(
         id=str(uuid.uuid4()),
+        usuario="admin",
         email="admin@hotel.com",
-        contrasena=pwd_context.hash("admin123"),
+        contrasena=hash_password("admin123"),
         nombre_completo="Administrador",
         rol="admin",
         estado="activo",
@@ -37,16 +39,18 @@ def seed():
     )
     gerente = Usuario(
         id=str(uuid.uuid4()),
+        usuario="gerente",
         email="gerente@hotel.com",
-        contrasena=pwd_context.hash("gerente123"),
+        contrasena=hash_password("gerente123"),
         nombre_completo="Gerente General",
         rol="gerente",
         estado="activo",
     )
     recepcion = Usuario(
         id=str(uuid.uuid4()),
+        usuario="recepcion",
         email="recepcion@hotel.com",
-        contrasena=pwd_context.hash("recepcion123"),
+        contrasena=hash_password("recepcion123"),
         nombre_completo="Recepcionista",
         rol="recepcionista",
         estado="activo",
