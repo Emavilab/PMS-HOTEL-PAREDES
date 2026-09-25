@@ -334,6 +334,7 @@ def actualizar_reserva(
         )
 
     nueva_habitacion_id = datos.habitacion_id or reserva.habitacion_id
+    datos_actualizar = datos.model_dump(exclude_unset=True)
 
     if "estado" in datos_actualizar and datos.estado != reserva.estado:
         raise HTTPException(
@@ -360,7 +361,6 @@ def actualizar_reserva(
                 detail="La habitacion no esta disponible en las fechas seleccionadas",
             )
 
-    datos_actualizar = datos.model_dump(exclude_unset=True)
     for campo, valor in datos_actualizar.items():
         setattr(reserva, campo, valor)
 

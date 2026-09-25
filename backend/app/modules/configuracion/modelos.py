@@ -15,6 +15,7 @@ class HotelConfig(Base):
     email: Mapped[str] = mapped_column(String(255), nullable=True, default="")
     rtn: Mapped[str] = mapped_column(String(50), nullable=True, default="")
     impuesto: Mapped[float] = mapped_column(Float, nullable=False, default=15.0)
+    impuesto_turistico: Mapped[float] = mapped_column(Float, nullable=False, default=10.0)
     moneda: Mapped[str] = mapped_column(String(10), nullable=False, default="HNL")
     logo_url: Mapped[str] = mapped_column(String(500), nullable=True, default="")
     login_fondo_url: Mapped[str] = mapped_column(String(500), nullable=True, default="")

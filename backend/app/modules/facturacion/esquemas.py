@@ -50,6 +50,11 @@ class PagoResponse(BaseModel):
 
 
 class FolioResponse(BaseModel):
+    reserva_id: str | None = None
+    codigo_confirmacion: str | None = None
+    huesped_nombre: str | None = None
+    fecha_entrada: str | None = None
+    fecha_salida: str | None = None
     cargos: list[CargoResponse] = []
     pagos: list[PagoResponse] = []
     subtotal: float = 0

@@ -15,6 +15,7 @@ from app.modules.caja.esquemas import (
     SesionesCajaPaginadas,
 )
 from app.modules.facturacion.modelos import Pago
+from app.modules.ventas.modelos import VentaParticular
 from app.modules.usuarios.modelos import Usuario
 
 router = APIRouter(prefix="/sesiones-caja", tags=["Caja"])
@@ -23,29 +24,50 @@ METODO_EFECTIVO = "efectivo"
 
 
 def _pagos_sesion(db: Session, sesion: SesionCaja) -> list[Pago]:
+    filtros = [
+        Pago.recibido_por == sesion.usuario_id,
+        Pago.pagado_en >= sesion.abierta_en,
+        Pago.estado == "completado",
+    ]
+    if sesion.cerrada_en:
+        filtros.append(Pago.pagado_en <= sesion.cerrada_en)
     return (
         db.query(Pago)
-        .filter(
-            Pago.recibido_por == sesion.usuario_id,
-            Pago.pagado_en >= sesion.abierta_en,
-        )
+        .filter(*filtros)
         .all()
     )
 
 
-def _desglose_pagos(pagos: list[Pago]) -> dict:
+def _ventas_particulares_sesion(db: Session, sesion: SesionCaja) -> list[VentaParticular]:
+    filtros = [
+        VentaParticular.creado_por == sesion.usuario_id,
+        VentaParticular.creado_en >= sesion.abierta_en,
+    ]
+    if sesion.cerrada_en:
+        filtros.append(VentaParticular.creado_en <= sesion.cerrada_en)
+    return (
+        db.query(VentaParticular)
+        .filter(*filtros)
+        .all()
+    )
+
+
+def _desglose_pagos(pagos: list[Pago], ventas_particulares: list[VentaParticular] | None = None) -> dict:
     por_metodo: dict[str, float] = {}
     for pago in pagos:
         metodo = (pago.metodo_pago or "Otro").strip()
         por_metodo[metodo] = round(por_metodo.get(metodo, 0) + float(pago.monto), 2)
+    for venta in ventas_particulares or []:
+        metodo = (venta.metodo_pago or "Otro").strip()
+        por_metodo[metodo] = round(por_metodo.get(metodo, 0) + float(venta.total or 0), 2)
     efectivo = sum(
         monto for metodo, monto in por_metodo.items()
         if metodo.lower() == METODO_EFECTIVO
     )
     return {
         "por_metodo": por_metodo,
-        "total_pagos": round(sum(float(p.monto) for p in pagos), 2),
-        "cantidad_pagos": len(pagos),
+        "total_pagos": round(sum(float(p.monto) for p in pagos) + sum(float(v.total or 0) for v in (ventas_particulares or [])), 2),
+        "cantidad_pagos": len(pagos) + len(ventas_particulares or []),
         "efectivo": round(efectivo, 2),
     }
 
@@ -117,7 +139,7 @@ def obtener_sesion_activa(
 def obtener_resumen_sesion(
     sesion_id: str,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(PersonalUsuario),
+    usuario_actual: Usuario = Depends(PersonalUsuario),
 ):
     sesion = db.query(SesionCaja).filter(SesionCaja.id == sesion_id).first()
     if not sesion:
@@ -125,7 +147,9 @@ def obtener_resumen_sesion(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Sesion de caja no encontrada",
         )
-    desglose = _desglose_pagos(_pagos_sesion(db, sesion))
+    if sesion.usuario_id != usuario_actual.id and usuario_actual.rol not in ("admin", "gerente"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes consultar esta sesion de caja")
+    desglose = _desglose_pagos(_pagos_sesion(db, sesion), _ventas_particulares_sesion(db, sesion))
     return {
         "sesion_id": sesion.id,
         "estado": sesion.estado,
@@ -164,7 +188,7 @@ def cerrar_sesion_caja(
             detail="No puedes cerrar una sesion de caja que no te pertenece",
         )
 
-    desglose = _desglose_pagos(_pagos_sesion(db, sesion))
+    desglose = _desglose_pagos(_pagos_sesion(db, sesion), _ventas_particulares_sesion(db, sesion))
 
     sesion.monto_esperado = round(float(sesion.monto_apertura or 0) + desglose["efectivo"], 2)
     sesion.monto_declarado = datos.monto_declarado

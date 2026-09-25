@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.dependencies import AdminUsuario
+from app.common.auditoria import crear_registro_auditoria
 from app.modules.configuracion.modelos import HotelConfig
 from app.modules.configuracion.esquemas import ConfigCrear, ConfigActualizar, ConfigResponse
 from app.modules.usuarios.modelos import Usuario
@@ -37,13 +38,15 @@ def obtener_config(db: Session = Depends(get_db)):
 def actualizar_config(
     datos: ConfigActualizar,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(AdminUsuario),
+    usuario_actual: Usuario = Depends(AdminUsuario),
 ):
     config = _obtener_o_crear_config(db)
+    anteriores = {key: getattr(config, key) for key in datos.model_dump(exclude_unset=True)}
     for key, val in datos.model_dump(exclude_unset=True).items():
         setattr(config, key, val)
     db.commit()
     db.refresh(config)
+    crear_registro_auditoria(db, usuario_actual.id, "ACTUALIZAR", "CONFIGURACION", config.id, anteriores, datos.model_dump(exclude_unset=True))
     return config
 
 
@@ -51,7 +54,7 @@ def actualizar_config(
 def subir_logo(
     archivo: UploadFile = File(...),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(AdminUsuario),
+    usuario_actual: Usuario = Depends(AdminUsuario),
 ):
     ext = os.path.splitext(archivo.filename or "logo.png")[1]
     nombre = f"logo_{uuid.uuid4().hex}{ext}"
@@ -62,15 +65,17 @@ def subir_logo(
     config.logo_url = f"/uploads/logos/{nombre}"
     db.commit()
     db.refresh(config)
+    crear_registro_auditoria(db, usuario_actual.id, "ACTUALIZAR", "LOGO", config.id, {"logo_url": None}, {"logo_url": config.logo_url})
     return config
 
 
 @router.delete("/logo", response_model=ConfigResponse)
 def eliminar_logo(
     db: Session = Depends(get_db),
-    _: Usuario = Depends(AdminUsuario),
+    usuario_actual: Usuario = Depends(AdminUsuario),
 ):
     config = _obtener_o_crear_config(db)
+    logo_anterior = config.logo_url
     if config.logo_url:
         ruta = Path(config.logo_url.lstrip("/"))
         if ruta.exists():
@@ -78,6 +83,7 @@ def eliminar_logo(
     config.logo_url = ""
     db.commit()
     db.refresh(config)
+    crear_registro_auditoria(db, usuario_actual.id, "ACTUALIZAR", "LOGO", config.id, {"logo_url": logo_anterior}, {"logo_url": ""})
     return config
 
 
@@ -85,7 +91,7 @@ def eliminar_logo(
 def subir_fondo_login(
     archivo: UploadFile = File(...),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(AdminUsuario),
+    usuario_actual: Usuario = Depends(AdminUsuario),
 ):
     ext = os.path.splitext(archivo.filename or "fondo.png")[1]
     nombre = f"fondo_{uuid.uuid4().hex}{ext}"
@@ -100,15 +106,17 @@ def subir_fondo_login(
     config.login_fondo_url = f"/uploads/logos/{nombre}"
     db.commit()
     db.refresh(config)
+    crear_registro_auditoria(db, usuario_actual.id, "ACTUALIZAR", "FONDO_LOGIN", config.id, {"login_fondo_url": None}, {"login_fondo_url": config.login_fondo_url})
     return config
 
 
 @router.delete("/fondo-login", response_model=ConfigResponse)
 def eliminar_fondo_login(
     db: Session = Depends(get_db),
-    _: Usuario = Depends(AdminUsuario),
+    usuario_actual: Usuario = Depends(AdminUsuario),
 ):
     config = _obtener_o_crear_config(db)
+    fondo_anterior = config.login_fondo_url
     if config.login_fondo_url:
         ruta = Path(config.login_fondo_url.lstrip("/"))
         if ruta.exists():
@@ -116,4 +124,5 @@ def eliminar_fondo_login(
     config.login_fondo_url = ""
     db.commit()
     db.refresh(config)
+    crear_registro_auditoria(db, usuario_actual.id, "ACTUALIZAR", "FONDO_LOGIN", config.id, {"login_fondo_url": fondo_anterior}, {"login_fondo_url": ""})
     return config

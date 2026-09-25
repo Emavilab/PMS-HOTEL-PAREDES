@@ -1,7 +1,30 @@
 from datetime import datetime
 from typing import Optional
-
 from pydantic import BaseModel, Field
+
+
+class PisoCrear(BaseModel):
+    nombre: str = Field(..., min_length=1, max_length=50)
+    descripcion: Optional[str] = None
+    estado: str = "ACTIVO"
+
+
+class PisoActualizar(BaseModel):
+    nombre: Optional[str] = Field(default=None, min_length=1, max_length=50)
+    descripcion: Optional[str] = None
+    estado: Optional[str] = None
+
+
+class PisoResponse(BaseModel):
+    id: str
+    nombre: str
+    descripcion: Optional[str] = None
+    estado: str
+    creado_en: datetime
+    actualizado_en: datetime
+
+    class Config:
+        from_attributes = True
 
 
 class TipoHabitacionCrear(BaseModel):
@@ -45,8 +68,8 @@ class TipoHabitacionResponse(BaseModel):
 
 class HabitacionCrear(BaseModel):
     tipo_habitacion_id: str
+    piso_id: str
     numero: str
-    piso: Optional[str] = None
     estado_operativo: str = "DISPONIBLE"
     estado_limpieza: str = "LIMPIA"
     notas: Optional[str] = None
@@ -54,8 +77,8 @@ class HabitacionCrear(BaseModel):
 
 class HabitacionActualizar(BaseModel):
     tipo_habitacion_id: Optional[str] = None
+    piso_id: Optional[str] = None
     numero: Optional[str] = None
-    piso: Optional[str] = None
     estado_operativo: Optional[str] = None
     estado_limpieza: Optional[str] = None
     notas: Optional[str] = None
@@ -64,6 +87,7 @@ class HabitacionActualizar(BaseModel):
 class HabitacionResponse(BaseModel):
     id: str
     tipo_habitacion_id: str
+    piso_id: str
     numero: str
     piso: Optional[str] = None
     estado_operativo: str
@@ -72,6 +96,30 @@ class HabitacionResponse(BaseModel):
     creado_en: datetime
     actualizado_en: datetime
     tipo_habitacion: Optional[TipoHabitacionResponse] = None
+
+    class Config:
+        from_attributes = True
+
+
+class MetodoPagoCrear(BaseModel):
+    nombre: str = Field(..., min_length=1, max_length=50)
+    descripcion: Optional[str] = None
+    activo: bool = True
+
+
+class MetodoPagoActualizar(BaseModel):
+    nombre: Optional[str] = Field(default=None, min_length=1, max_length=50)
+    descripcion: Optional[str] = None
+    activo: Optional[bool] = None
+
+
+class MetodoPagoResponse(BaseModel):
+    id: str
+    nombre: str
+    descripcion: Optional[str] = None
+    activo: bool
+    creado_en: datetime
+    actualizado_en: datetime
 
     class Config:
         from_attributes = True

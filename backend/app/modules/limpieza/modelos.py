@@ -12,6 +12,7 @@ class TareaLimpieza(Base):
     habitacion_id: Mapped[str] = mapped_column(String, ForeignKey("habitaciones.id"), nullable=False)
     asignada_a: Mapped[str] = mapped_column(String, ForeignKey("usuarios.id"), nullable=True)
     fecha_tarea: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    tipo_limpieza: Mapped[str] = mapped_column(String(50), nullable=False, default="GENERAL")
     prioridad: Mapped[str] = mapped_column(String(50), nullable=False, default="normal")
     estado: Mapped[str] = mapped_column(String(50), nullable=False, default="PENDIENTE")
     notas: Mapped[str] = mapped_column(Text, nullable=True)

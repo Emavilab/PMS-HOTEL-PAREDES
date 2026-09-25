@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -12,6 +12,10 @@ class CheckOutRequest(BaseModel):
     pass
 
 
+class ExtensionEstadiaRequest(BaseModel):
+    nueva_fecha_salida: date
+
+
 class EstadiaResponse(BaseModel):
     id: str
     reserva_id: str
@@ -22,6 +26,11 @@ class EstadiaResponse(BaseModel):
     estado: str
     creado_en: datetime
     actualizado_en: datetime
+    nueva_fecha_salida: Optional[date] = None
+    noches_adicionales: Optional[int] = None
+    total_adicional: Optional[float] = None
+    nuevo_total: Optional[float] = None
+    saldo_pendiente: Optional[float] = None
 
     class Config:
         from_attributes = True

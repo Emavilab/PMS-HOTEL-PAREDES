@@ -19,6 +19,30 @@ class ProductoActualizar(BaseModel):
     estado: Optional[str] = None
 
 
+class CategoriaProductoCrear(BaseModel):
+    nombre: str
+    descripcion: Optional[str] = None
+    activo: bool = True
+
+
+class CategoriaProductoActualizar(BaseModel):
+    nombre: Optional[str] = None
+    descripcion: Optional[str] = None
+    activo: Optional[bool] = None
+
+
+class CategoriaProductoResponse(BaseModel):
+    id: str
+    nombre: str
+    descripcion: Optional[str] = None
+    activo: bool
+    creado_en: datetime
+    actualizado_en: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class ProductoResponse(BaseModel):
     id: str
     nombre: str
@@ -36,6 +60,8 @@ class ConsumoCrear(BaseModel):
     producto_id: str
     cantidad: int = 1
     pagado: bool = False
+    metodo_pago: Optional[str] = None
+    efectivo_recibido: Optional[float] = None
 
 
 class ConsumoResponse(BaseModel):
@@ -51,6 +77,26 @@ class ConsumoResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class VentaParticularCrear(BaseModel):
+    cliente_nombre: str = "Cliente particular"
+    items: list[dict]
+    metodo_pago: str
+    efectivo_recibido: Optional[float] = None
+
+
+class VentaParticularResponse(BaseModel):
+    id: str
+    numero: str
+    cliente_nombre: str
+    items: list[dict]
+    subtotal: float
+    total: float
+    metodo_pago: str
+    efectivo_recibido: float
+    cambio: float
+    creado_en: datetime
 
 
 class VerificacionSalidaResponse(BaseModel):

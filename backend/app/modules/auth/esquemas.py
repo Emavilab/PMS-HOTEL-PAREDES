@@ -4,7 +4,7 @@ from app.modules.usuarios.esquemas import UsuarioResponse
 
 
 class LoginRequest(BaseModel):
-    email: str
+    identificador: str
     contrasena: str
 
 

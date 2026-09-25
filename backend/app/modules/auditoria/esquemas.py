@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 class RegistroAuditoriaResponse(BaseModel):
     id: str
     usuario_id: Optional[str] = None
+    nombre_usuario: Optional[str] = None
     accion: str
     tipo_entidad: str
     entidad_id: Optional[str] = None
@@ -17,3 +18,10 @@ class RegistroAuditoriaResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class RegistrosAuditoriaPaginados(BaseModel):
+    items: list[RegistroAuditoriaResponse]
+    total: int
+    pagina: int
+    tamano: int

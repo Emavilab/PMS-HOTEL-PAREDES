@@ -5,6 +5,42 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
 
+class MetodoPago(Base):
+    __tablename__ = "metodos_pago"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    nombre: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    descripcion: Mapped[str] = mapped_column(Text, nullable=True)
+    activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    creado_en: Mapped[datetime] = mapped_column(
+        "created_at", DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    actualizado_en: Mapped[datetime] = mapped_column(
+        "updated_at", DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class Piso(Base):
+    __tablename__ = "pisos"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    nombre: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    descripcion: Mapped[str] = mapped_column(Text, nullable=True)
+    estado: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVO")
+    creado_en: Mapped[datetime] = mapped_column(
+        "created_at", DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    actualizado_en: Mapped[datetime] = mapped_column(
+        "updated_at", DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    habitaciones = relationship("Habitacion", back_populates="piso")
+
+
 class TipoHabitacion(Base):
     __tablename__ = "tipos_habitacion"
 
@@ -34,9 +70,13 @@ class Habitacion(Base):
     __tablename__ = "habitaciones"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    tipo_habitacion_id: Mapped[str] = mapped_column(String, ForeignKey("tipos_habitacion.id"), nullable=False)
+    tipo_habitacion_id: Mapped[str] = mapped_column(
+        String, ForeignKey("tipos_habitacion.id"), nullable=False
+    )
+    piso_id: Mapped[str] = mapped_column(
+        String, ForeignKey("pisos.id"), nullable=False
+    )
     numero: Mapped[str] = mapped_column(String(20), unique=True, nullable=False, index=True)
-    piso: Mapped[str] = mapped_column(String(10), nullable=True)
     estado_operativo: Mapped[str] = mapped_column(
         "operational_status", String(50), nullable=False, default="DISPONIBLE"
     )
@@ -54,5 +94,6 @@ class Habitacion(Base):
     )
 
     tipo_habitacion = relationship("TipoHabitacion", back_populates="habitaciones")
+    piso = relationship("Piso", back_populates="habitaciones")
     reservas = relationship("Reserva", back_populates="habitacion_ref")
     tareas_limpieza = relationship("TareaLimpieza", back_populates="habitacion")

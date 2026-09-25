@@ -84,6 +84,9 @@ def agregar_cargo(
             detail="Reserva no encontrada",
         )
 
+    if datos.cantidad <= 0 or datos.precio_unitario < 0 or datos.total <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El cargo debe tener cantidad positiva y total mayor que cero")
+
     cargo = Cargo(
         reserva_id=reserva_id,
         descripcion=datos.descripcion,
@@ -151,6 +154,20 @@ def registrar_pago(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Reserva no encontrada",
+        )
+
+    if datos.monto <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El monto del pago debe ser mayor que cero")
+
+    total_pagado = db.query(func.coalesce(func.sum(Pago.monto), 0)).filter(
+        Pago.reserva_id == reserva_id,
+        Pago.estado == "completado",
+    ).scalar() or 0
+    saldo = round(float(reserva.total or 0) - float(total_pagado), 2)
+    if datos.monto > saldo + 0.01:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"El pago supera el saldo pendiente de {saldo:.2f}",
         )
 
     pago = Pago(
@@ -221,6 +238,11 @@ def obtener_folio(
     total_pagado = db.query(func.sum(Pago.monto)).filter(Pago.reserva_id == reserva_id).scalar() or 0
 
     return FolioResponse(
+        reserva_id=reserva.id,
+        codigo_confirmacion=reserva.codigo_confirmacion,
+        huesped_nombre=(f"{reserva.huesped.nombres} {reserva.huesped.apellidos}" if reserva.huesped else None),
+        fecha_entrada=str(reserva.fecha_entrada),
+        fecha_salida=str(reserva.fecha_salida),
         cargos=[CargoResponse.model_validate(c) for c in cargos],
         pagos=[PagoResponse.model_validate(p) for p in pagos],
         subtotal=reserva.subtotal or 0,
@@ -228,5 +250,5 @@ def obtener_folio(
         impuesto=reserva.impuesto or 0,
         total=reserva.total or 0,
         pagado=float(total_pagado),
-        saldo=(reserva.total or 0) - float(total_pagado),
+        saldo=max((reserva.total or 0) - float(total_pagado), 0),
     )
