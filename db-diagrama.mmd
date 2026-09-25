@@ -1,0 +1,167 @@
+erDiagram
+    USUARIOS ||--o{ RESERVAS : crea
+    USUARIOS ||--o{ SESIONES_CAJA : abre
+    USUARIOS ||--o{ REGISTROS_AUDITORIA : registra
+    USUARIOS ||--o{ TAREAS_LIMPIEZA : asigna
+    USUARIOS ||--o{ CARGOS : registra
+    USUARIOS ||--o{ PAGOS : recibe
+    USUARIOS ||--o{ ESTADIAS : check_in
+    USUARIOS ||--o{ ESTADIAS : check_out
+
+    HUESPEDES ||--o{ RESERVAS : tiene
+
+    TIPOS_HABITACION ||--o{ HABITACIONES : define
+    TIPOS_HABITACION ||--o{ RESERVAS : solicita
+
+    HABITACIONES ||--o{ RESERVAS : asigna
+    HABITACIONES ||--o{ TAREAS_LIMPIEZA : tiene
+
+    RESERVAS ||--|| ESTADIAS : tiene
+    RESERVAS ||--o{ CARGOS : genera
+    RESERVAS ||--o{ PAGOS : recibe
+    RESERVAS ||--o{ FACTURAS : emite
+    RESERVAS ||--o{ CONSUMOS : registra
+
+    PRODUCTOS ||--o{ CONSUMOS : incluye
+
+    USUARIOS {
+        string id PK
+        string email
+        string password
+        string nombre_completo
+        string telefono
+        string rol
+        string estado
+        bool es_superadmin
+    }
+
+    HUESPEDES {
+        string id PK
+        string nombres
+        string apellidos
+        string tipo_documento
+        string numero_documento
+        string telefono
+        string email
+    }
+
+    TIPOS_HABITACION {
+        string id PK
+        string codigo
+        string nombre
+        int capacidad_base
+        int capacidad_maxima
+        float precio_base
+    }
+
+    HABITACIONES {
+        string id PK
+        string tipo_habitacion_id FK
+        string numero
+        string piso
+        string estado_operativo
+        string estado_limpieza
+    }
+
+    RESERVAS {
+        string id PK
+        string huesped_id FK
+        string tipo_habitacion_id FK
+        string habitacion_id FK
+        string creada_por FK
+        date fecha_entrada
+        date fecha_salida
+        int adultos
+        int ninos
+        string estado
+        float subtotal
+        float descuento
+        float impuesto
+        float total
+    }
+
+    ESTADIAS {
+        string id PK
+        string reserva_id FK
+        datetime check_in_real
+        datetime check_out_real
+        string check_in_realizado_por FK
+        string check_out_realizado_por FK
+        string estado
+    }
+
+    CARGOS {
+        string id PK
+        string reserva_id FK
+        string descripcion
+        int cantidad
+        float precio_unitario
+        float total
+        string creado_por FK
+    }
+
+    PAGOS {
+        string id PK
+        string reserva_id FK
+        float monto
+        string metodo_pago
+        string referencia
+        string estado
+        string recibido_por FK
+    }
+
+    FACTURAS {
+        string id PK
+        string reserva_id FK
+        string numero
+        datetime fecha_emision
+    }
+
+    PRODUCTOS {
+        string id PK
+        string nombre
+        string descripcion
+        float precio_unitario
+        string categoria
+        string estado
+    }
+
+    CONSUMOS {
+        string id PK
+        string reserva_id FK
+        string producto_id FK
+        int cantidad
+        float precio_unitario
+        float total
+        bool pagado
+    }
+
+    TAREAS_LIMPIEZA {
+        string id PK
+        string habitacion_id FK
+        string asignada_a FK
+        date fecha_tarea
+        string tipo_limpieza
+        string prioridad
+        string estado
+    }
+
+    SESIONES_CAJA {
+        string id PK
+        string usuario_id FK
+        float monto_apertura
+        float monto_esperado
+        float monto_declarado
+        float diferencia
+        string estado
+    }
+
+    REGISTROS_AUDITORIA {
+        string id PK
+        string usuario_id FK
+        string accion
+        string tipo_entidad
+        string entidad_id
+        text valores_anteriores
+        text valores_nuevos
+    }
