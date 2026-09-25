@@ -9,7 +9,7 @@ function obtenerToken(): string | null {
 
 async function peticion<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit & { responseType?: "blob" } = {}
 ): Promise<T> {
   const token = obtenerToken()
   const headers: Record<string, string> = {
@@ -34,15 +34,19 @@ async function peticion<T>(
     return undefined as T
   }
 
+  if (options.responseType === "blob") {
+    return res.blob() as Promise<T>
+  }
+
   return res.json()
 }
 
 export const api = {
   auth: {
-    login: (email: string, password: string) =>
+    login: (identificador: string, password: string) =>
       peticion<{ access_token: string; usuario: any }>("/auth/login", {
         method: "POST",
-        body: JSON.stringify({ email, contrasena: password }),
+        body: JSON.stringify({ identificador, contrasena: password }),
       }),
     verificar: (token: string) =>
       peticion<any>("/auth/verify", {
@@ -68,7 +72,10 @@ export const api = {
     eliminar: (id: string) => peticion<void>(`/tipos-habitacion/${id}`, { method: "DELETE" }),
   },
   habitaciones: {
-    listar: () => peticion<any[]>("/habitaciones"),
+    listar: (params?: Record<string, string>) => {
+      const qs = params ? "?" + new URLSearchParams(params).toString() : ""
+      return peticion<any[]>(`/habitaciones${qs}`)
+    },
     crear: (datos: any) =>
       peticion<any>("/habitaciones", { method: "POST", body: JSON.stringify(datos) }),
     actualizar: (id: string, datos: any) =>
@@ -76,6 +83,12 @@ export const api = {
     actualizarEstado: (id: string, datos: any) =>
       peticion<any>(`/habitaciones/${id}/estado`, { method: "PATCH", body: JSON.stringify(datos) }),
     eliminar: (id: string) => peticion<void>(`/habitaciones/${id}`, { method: "DELETE" }),
+    listarPisos: () => peticion<any[]>("/pisos"),
+    crearPiso: (datos: any) =>
+      peticion<any>("/pisos", { method: "POST", body: JSON.stringify(datos) }),
+    actualizarPiso: (id: string, datos: any) =>
+      peticion<any>(`/pisos/${id}`, { method: "PUT", body: JSON.stringify(datos) }),
+    eliminarPiso: (id: string) => peticion<void>(`/pisos/${id}`, { method: "DELETE" }),
   },
   huespedes: {
     listar: (busqueda?: string) =>
@@ -116,6 +129,11 @@ export const api = {
       }),
     checkOut: (id: string) =>
       peticion<any>(`/reservas/${id}/check-out`, { method: "POST" }),
+    extenderEstadia: (id: string, nuevaFechaSalida: string) =>
+      peticion<any>(`/reservas/${id}/extender-estadia`, {
+        method: "POST",
+        body: JSON.stringify({ nueva_fecha_salida: nuevaFechaSalida }),
+      }),
   },
   disponibilidad: {
     verificar: (entrada: string, salida: string, tipoHabitacionId?: string) => {
@@ -133,6 +151,8 @@ export const api = {
       peticion<any>("/tareas-limpieza", { method: "POST", body: JSON.stringify(datos) }),
     actualizar: (id: string, datos: any) =>
       peticion<any>(`/tareas-limpieza/${id}`, { method: "PATCH", body: JSON.stringify(datos) }),
+    personal: () =>
+      peticion<{ id: string; nombre_completo: string }[]>("/tareas-limpieza/personal"),
   },
   facturas: {
     listar: () => peticion<any[]>("/facturas"),
@@ -156,6 +176,15 @@ export const api = {
     obtenerFolio: (reservaId: string) =>
       peticion<any>(`/reservas/${reservaId}/folio`),
   },
+  metodosPago: {
+    listar: () => peticion<any[]>("/metodos-pago"),
+    crear: (datos: { nombre: string; descripcion?: string; activo: boolean }) =>
+      peticion<any>("/metodos-pago", { method: "POST", body: JSON.stringify(datos) }),
+    actualizar: (id: string, datos: { nombre?: string; descripcion?: string; activo?: boolean }) =>
+      peticion<any>(`/metodos-pago/${id}`, { method: "PUT", body: JSON.stringify(datos) }),
+    eliminar: (id: string) =>
+      peticion<void>(`/metodos-pago/${id}`, { method: "DELETE" }),
+  },
   caja: {
     abrir: (montoApertura: number) =>
       peticion<any>("/sesiones-caja/abrir", {
@@ -175,17 +204,44 @@ export const api = {
     resumen: (id: string) => peticion<any>(`/sesiones-caja/${id}/resumen`),
   },
   reportes: {
+    notificaciones: () => peticion<import("@/types").Notificacion[]>("/reportes/notificaciones"),
     ocupacion: (fechaInicio: string, fechaFin: string) =>
       peticion<any[]>(`/reportes/ocupacion?desde=${fechaInicio}&hasta=${fechaFin}`),
     ingresos: (fechaInicio: string, fechaFin: string) =>
       peticion<any>(`/reportes/ingresos?desde=${fechaInicio}&hasta=${fechaFin}`),
     llegadas: () => peticion<any[]>("/reportes/llegadas"),
     salidas: () => peticion<any[]>("/reportes/salidas"),
+    cuentasPorCobrar: (hasta?: string) =>
+      peticion<any>(`/reportes/cuentas-por-cobrar${hasta ? `?hasta=${hasta}` : ""}`),
+    housekeeping: (fecha?: string) =>
+      peticion<any>(`/reportes/housekeeping${fecha ? `?fecha=${fecha}` : ""}`),
+    ingresosDetallado: (desde: string, hasta: string) =>
+      peticion<any>(`/reportes/ingresos-detallado?desde=${desde}&hasta=${hasta}`),
+    forecast: (desde: string, hasta: string) =>
+      peticion<any>(`/reportes/forecast?desde=${desde}&hasta=${hasta}`),
+    libroHuespedes: (desde: string, hasta: string) =>
+      peticion<any>(`/reportes/libro-huespedes?desde=${desde}&hasta=${hasta}`),
+    impuestosTuristicos: (desde: string, hasta: string) =>
+      peticion<any>(`/reportes/impuestos-turisticos?desde=${desde}&hasta=${hasta}`),
+    ventas: (desde: string, hasta: string) =>
+      peticion<any>(`/reportes/ventas?desde=${desde}&hasta=${hasta}`),
+    conciliacionCaja: (desde: string, hasta: string) =>
+      peticion<any>(`/reportes/conciliacion-caja?desde=${desde}&hasta=${hasta}`),
+    ejecutivo: (desde: string, hasta: string, granularidad?: string) =>
+      peticion<any>(`/reportes/ejecutivo?desde=${desde}&hasta=${hasta}&granularidad=${granularidad || "mensual"}`),
+    exportar: (tipo: string, formato: "xlsx" | "pdf", desde: string, hasta: string) =>
+      peticion<Blob>(`/reportes/exportar?tipo=${tipo}&formato=${formato}&desde=${desde}&hasta=${hasta}`, {
+        responseType: "blob",
+      }),
   },
   auditoria: {
     listar: (params?: Record<string, string>) => {
       const qs = params ? "?" + new URLSearchParams(params).toString() : ""
-      return peticion<any[]>(`/registros-auditoria${qs}`)
+      return peticion<import("@/types").AuditoriaPaginada>(`/registros-auditoria${qs}`)
+    },
+    exportar: (params: Record<string, string>, formato: "xlsx" | "pdf") => {
+      const query = new URLSearchParams({ ...params, formato }).toString()
+      return peticion<Blob>(`/registros-auditoria/exportar?${query}`, { responseType: "blob" })
     },
   },
   configuracion: {
@@ -236,6 +292,11 @@ export const api = {
   ventas: {
     listarProductos: (categoria?: string) =>
       peticion<any[]>(`/ventas/productos${categoria ? `?categoria=${categoria}` : ""}`),
+    listarCategorias: () => peticion<any[]>("/ventas/categorias"),
+    listarTodasCategorias: () => peticion<any[]>("/ventas/categorias/todas"),
+    crearCategoria: (datos: any) => peticion<any>("/ventas/categorias", { method: "POST", body: JSON.stringify(datos) }),
+    actualizarCategoria: (id: string, datos: any) => peticion<any>(`/ventas/categorias/${id}`, { method: "PUT", body: JSON.stringify(datos) }),
+    eliminarCategoria: (id: string) => peticion<void>(`/ventas/categorias/${id}`, { method: "DELETE" }),
     crearProducto: (datos: any) =>
       peticion<any>("/ventas/productos", { method: "POST", body: JSON.stringify(datos) }),
     actualizarProducto: (id: string, datos: any) =>
@@ -251,9 +312,14 @@ export const api = {
       }),
     listarConsumos: (reservaId: string) =>
       peticion<any[]>(`/ventas/reservas/${reservaId}/consumos`),
+    crearVentaParticular: (datos: any) =>
+      peticion<any>("/ventas/particulares", { method: "POST", body: JSON.stringify(datos) }),
     verificarSalida: (reservaId: string) =>
       peticion<any>(`/ventas/reservas/${reservaId}/verificar-salida`),
-    culminarSalida: (reservaId: string, metodoPago: string) =>
-      peticion<any>(`/ventas/reservas/${reservaId}/culminar-salida?metodo_pago=${metodoPago}`, { method: "POST" }),
+    culminarSalida: (reservaId: string, metodoPago: string, efectivoRecibido?: number) => {
+      const params = new URLSearchParams({ metodo_pago: metodoPago })
+      if (efectivoRecibido !== undefined) params.set("efectivo_recibido", String(efectivoRecibido))
+      return peticion<any>(`/ventas/reservas/${reservaId}/culminar-salida?${params.toString()}`, { method: "POST" })
+    },
   },
 }

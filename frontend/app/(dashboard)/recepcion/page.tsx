@@ -26,6 +26,12 @@ export default function RecepcionPage() {
   const [selectedRoomId, setSelectedRoomId] = useState<string>("")
   const [confirming, setConfirming] = useState(false)
 
+  const [verificacion, setVerificacion] = useState<any | null>(null)
+  const [loadingDetalle, setLoadingDetalle] = useState(false)
+  const [metodosPago, setMetodosPago] = useState<any[]>([])
+  const [metodoPago, setMetodoPago] = useState("")
+  const [culminando, setCulminando] = useState(false)
+
   const [showQuickReserva, setShowQuickReserva] = useState(false)
   const [roomToRent, setRoomToRent] = useState<any | null>(null)
   const [occupiedRoom, setOccupiedRoom] = useState<any | null>(null)
@@ -39,10 +45,14 @@ export default function RecepcionPage() {
       api.reportes.llegadas(),
       api.reportes.salidas(),
       api.habitaciones.listar(),
-    ]).then(([arr, dep, r]) => {
+      api.metodosPago.listar(),
+    ]).then(([arr, dep, r, metodos]) => {
       setArrivals(arr)
       setDepartures(dep)
       setRooms(r)
+      const activos = metodos.filter((metodo: any) => metodo.activo)
+      setMetodosPago(activos)
+      setMetodoPago((actual) => activos.some((metodo: any) => metodo.nombre === actual) ? actual : activos[0]?.nombre || "")
     }).catch((err: any) => {
       setError(err.message)
     }).finally(() => setLoading(false))
@@ -73,15 +83,23 @@ export default function RecepcionPage() {
         }
         await api.reservas.checkIn(accion.reserva.id, roomId)
       } else {
-        await api.reservas.checkOut(accion.reserva.id)
+        if (!verificacion) {
+          setError("No hay datos de verificación de salida")
+          setConfirming(false)
+          return
+        }
+        setCulminando(true)
+        await api.ventas.culminarSalida(accion.reserva.reserva_id || accion.reserva.id, metodoPago)
       }
       setAccion(null)
       setSelectedRoomId("")
+      setVerificacion(null)
       loadData()
     } catch (err: any) {
       setError(err.message)
     } finally {
       setConfirming(false)
+      setCulminando(false)
     }
   }
 
@@ -92,6 +110,15 @@ export default function RecepcionPage() {
 
   function openCheckOut(reserva: any) {
     setAccion({ tipo: "checkout", reserva })
+    setVerificacion(null)
+    setLoadingDetalle(true)
+    api.ventas.verificarSalida(reserva.reserva_id || reserva.id)
+      .then((data) => {
+        setVerificacion(data)
+        setMetodoPago((actual) => metodosPago.some((metodo) => metodo.nombre === actual) ? actual : metodosPago[0]?.nombre || "")
+      })
+      .catch((err: any) => setError(err.message))
+      .finally(() => setLoadingDetalle(false))
   }
 
   const availableRooms = rooms.filter((r) => r.estado_operativo === "DISPONIBLE")
@@ -486,26 +513,85 @@ export default function RecepcionPage() {
 
       <Dialog
         open={accion?.tipo === "checkout"}
-        onClose={() => setAccion(null)}
-        title="Confirmar Check-out"
+        onClose={() => { setAccion(null); setVerificacion(null) }}
+        title="Verificar Salida"
+        className="max-w-2xl"
       >
         {accion?.reserva && (
           <div className="space-y-4">
-            <div className="bg-gray-50 p-3 rounded-md space-y-1 text-sm">
-              <p><span className="font-medium">Huésped:</span> {accion.reserva.huesped}</p>
-              <p><span className="font-medium">Código:</span> {accion.reserva.codigo_confirmacion}</p>
-              {accion.reserva.habitacion && <p><span className="font-medium">Habitación:</span> {accion.reserva.habitacion}</p>}
-              {accion.reserva.total != null && (
-                <p className="text-base font-semibold text-blue-700 pt-1">Total: {formatCurrency(accion.reserva.total)}</p>
-              )}
-            </div>
+            {loadingDetalle ? (
+              <div className="text-center py-6 text-gray-500">Cargando detalle de salida...</div>
+            ) : verificacion ? (
+              <div className="space-y-4">
+                <div className="bg-gray-50 p-3 rounded-md space-y-1 text-sm">
+                  <p className="font-semibold">Hab. {verificacion.habitacion_numero} - {verificacion.habitacion_tipo}</p>
+                  <p><span className="font-medium">Huésped:</span> {verificacion.huesped_nombre}</p>
+                  {verificacion.huesped_documento && <p><span className="font-medium">Doc:</span> {verificacion.huesped_documento}</p>}
+                  <p><span className="font-medium">Código:</span> {verificacion.codigo_confirmacion}</p>
+                  <p><span className="font-medium">Estadía:</span> {verificacion.fecha_entrada} → {verificacion.fecha_salida} ({verificacion.noches} noche{verificacion.noches !== 1 ? "s" : ""})</p>
+                </div>
 
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={() => setAccion(null)}>Cancelar</Button>
-              <Button variant="secondary" onClick={handleConfirm} disabled={confirming}>
-                {confirming ? "Procesando..." : "Confirmar Check-out"}
-              </Button>
-            </div>
+                <div className="border rounded-md divide-y text-sm">
+                  <div className="flex justify-between p-2"><span>Subtotal ({verificacion.noches} noche{verificacion.noches !== 1 ? "s" : ""})</span><span>{formatCurrency(verificacion.subtotal)}</span></div>
+                  <div className="flex justify-between p-2"><span>Impuesto (15%)</span><span>{formatCurrency(verificacion.impuesto)}</span></div>
+                  {verificacion.descuento > 0 && <div className="flex justify-between p-2 text-red-600"><span>Descuento</span><span>-{formatCurrency(verificacion.descuento)}</span></div>}
+                  <div className="flex justify-between p-2 font-medium"><span>Total habitación</span><span>{formatCurrency(verificacion.total_habitacion)}</span></div>
+                </div>
+
+                <div className="border rounded-md divide-y text-sm">
+                  <p className="p-2 font-medium">Consumos</p>
+                  {verificacion.consumos.length === 0 ? (
+                    <p className="p-2 text-gray-500">Sin consumos</p>
+                  ) : (
+                    verificacion.consumos.map((c: any) => (
+                      <div key={c.id} className="flex justify-between p-2">
+                        <span>{c.producto_nombre} x{c.cantidad}</span>
+                        <span className={c.pagado ? "text-green-600" : "text-red-600"}>
+                          {formatCurrency(c.total)} {c.pagado ? "(pagado)" : ""}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                  {verificacion.total_consumos_pendientes > 0 && (
+                    <div className="flex justify-between p-2 font-medium text-red-600">
+                      <span>Total pendiente</span><span>{formatCurrency(verificacion.total_consumos_pendientes)}</span>
+                    </div>
+                  )}
+                </div>
+
+                {verificacion.mora_penalidad > 0 && (
+                  <div className="flex justify-between p-2 bg-red-50 rounded-md text-sm font-medium text-red-700">
+                    <span>Mora/Penalidad</span><span>{formatCurrency(verificacion.mora_penalidad)}</span>
+                  </div>
+                )}
+
+                {verificacion.total_pagado > 0 && (
+                  <div className="flex justify-between p-2 bg-green-50 rounded-md text-sm font-medium text-green-700">
+                    <span>Total pagado (adelantos)</span><span>-{formatCurrency(verificacion.total_pagado)}</span>
+                  </div>
+                )}
+
+                <div className="flex justify-between p-3 bg-blue-50 rounded-md text-base font-bold text-blue-800">
+                  <span>Total a pagar</span><span>{formatCurrency(verificacion.total_a_pagar)}</span>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium">Método de pago</label>
+                    <select className="w-full h-10 px-3 rounded-md border border-gray-300 text-sm" value={metodoPago}
+                      onChange={(e) => setMetodoPago(e.target.value)}>
+                      {metodosPago.length === 0 && <option value="">Configura un método de pago</option>}
+                      {metodosPago.map((metodo) => <option key={metodo.id} value={metodo.nombre}>{metodo.nombre}</option>)}
+                    </select>
+                  </div>
+                  <Button className="w-full" onClick={handleConfirm} disabled={culminando || verificacion.total_a_pagar < 0}>
+                    {culminando ? "Procesando..." : "Culminar Salida"}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-red-500">Error al cargar datos de verificación</p>
+            )}
           </div>
         )}
       </Dialog>
@@ -525,6 +611,7 @@ export default function RecepcionPage() {
       <DetalleHabitacionOcupadaDialog
         room={occupiedRoom}
         onClose={() => setOccupiedRoom(null)}
+        onUpdated={() => { setOccupiedRoom(null); loadData() }}
       />
     </div>
   )
@@ -681,10 +768,12 @@ function NuevaReservaDialog({ open, onClose, onCreated }: { open: boolean; onClo
   )
 }
 
-function DetalleHabitacionOcupadaDialog({ room, onClose }: { room: any | null; onClose: () => void }) {
+function DetalleHabitacionOcupadaDialog({ room, onClose, onUpdated }: { room: any | null; onClose: () => void; onUpdated: () => void }) {
   const [detalle, setDetalle] = useState<any | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  const [nuevaFechaSalida, setNuevaFechaSalida] = useState("")
+  const [extending, setExtending] = useState(false)
 
   useEffect(() => {
     if (!room) return
@@ -692,11 +781,28 @@ function DetalleHabitacionOcupadaDialog({ room, onClose }: { room: any | null; o
     setLoading(true)
     setDetalle(null)
     setError("")
+    setNuevaFechaSalida("")
     api.ventas.detalleOcupacion(room.id)
       .then(setDetalle)
       .catch((err: any) => setError(err.message))
       .finally(() => setLoading(false))
   }, [room])
+
+  async function handleExtension() {
+    if (!detalle || !nuevaFechaSalida) return
+    setExtending(true)
+    setError("")
+    try {
+      const resultado = await api.reservas.extenderEstadia(detalle.reserva_id, nuevaFechaSalida)
+      setDetalle((actual: any) => ({ ...actual, fecha_salida: resultado.nueva_fecha_salida }))
+      setNuevaFechaSalida("")
+      onUpdated()
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setExtending(false)
+    }
+  }
 
   return (
     <Dialog open={!!room} onClose={onClose} title={`Habitación ${room?.numero} ocupada`} className="max-w-2xl">
@@ -744,6 +850,24 @@ function DetalleHabitacionOcupadaDialog({ room, onClose }: { room: any | null; o
             </p>
           </div>
 
+          <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div className="flex-1 space-y-1">
+                <h4 className="text-sm font-semibold text-blue-950">Extender estadía</h4>
+                <p className="text-xs text-blue-800">Conserva esta reserva, sus pagos y su folio actual.</p>
+                <Input
+                  type="date"
+                  min={detalle.fecha_salida}
+                  value={nuevaFechaSalida}
+                  onChange={(event) => setNuevaFechaSalida(event.target.value)}
+                />
+              </div>
+              <Button onClick={handleExtension} disabled={extending || !nuevaFechaSalida}>
+                {extending ? "Guardando..." : "Confirmar extensión"}
+              </Button>
+            </div>
+          </div>
+
           <div className="flex justify-end pt-2">
             <Button variant="outline" onClick={onClose}>Cerrar</Button>
           </div>
@@ -774,6 +898,7 @@ function RentarHabitacionDialog({ room, onClose, onCreated }: { room: any | null
   const [extraDesc, setExtraDesc] = useState("")
   const [extraMonto, setExtraMonto] = useState(0)
   const [taxRate, setTaxRate] = useState(15)
+  const [metodosPago, setMetodosPago] = useState<any[]>([])
 
   const [form, setForm] = useState({
     nombres: "", apellidos: "", tipo_documento: "DNI", numero_documento: "",
@@ -783,14 +908,20 @@ function RentarHabitacionDialog({ room, onClose, onCreated }: { room: any | null
     adultos: 1, ninos: 0,
     descuento: 0,
     adelanto: 0,
+    metodo_pago: "",
     tiene_vehiculo: false,
     detalle_vehiculo: "",
   })
 
   useEffect(() => {
     if (!room) return
-    api.configuracion.obtener()
-      .then((config) => setTaxRate(Number(config.impuesto) || 0))
+    Promise.all([api.configuracion.obtener(), api.metodosPago.listar()])
+      .then(([config, metodos]) => {
+        const activos = metodos.filter((metodo: any) => metodo.activo)
+        setTaxRate(Number(config.impuesto) || 0)
+        setMetodosPago(activos)
+        setForm((actual) => ({ ...actual, metodo_pago: activos[0]?.nombre || "" }))
+      })
       .catch(() => setTaxRate(15))
   }, [room])
 
@@ -953,7 +1084,7 @@ function RentarHabitacionDialog({ room, onClose, onCreated }: { room: any | null
       if (adelanto > 0) {
         await api.facturacion.agregarPago(reserva.id, {
           monto: adelanto,
-          metodo_pago: "Efectivo",
+          metodo_pago: form.metodo_pago,
           referencia: `Adelanto - ${form.fecha_entrada}`,
         })
       }
@@ -1188,6 +1319,13 @@ function RentarHabitacionDialog({ room, onClose, onCreated }: { room: any | null
               <div className="space-y-1">
                 <label className="text-sm font-medium">Adelanto (a pagar ahora)</label>
                 <Input type="number" min={0} step={0.01} value={form.adelanto} onChange={(e) => setForm({ ...form, adelanto: parseFloat(e.target.value) || 0 })} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Método de pago</label>
+                <select className={inputCls} value={form.metodo_pago} onChange={(e) => setForm({ ...form, metodo_pago: e.target.value })}>
+                  {metodosPago.length === 0 && <option value="">Configura un método de pago</option>}
+                  {metodosPago.map((metodo) => <option key={metodo.id} value={metodo.nombre}>{metodo.nombre}</option>)}
+                </select>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">

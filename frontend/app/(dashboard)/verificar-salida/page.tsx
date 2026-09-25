@@ -15,7 +15,9 @@ export default function VerificarSalidaPage() {
   const [verificacion, setVerificacion] = useState<any | null>(null)
   const [factura, setFactura] = useState<any | null>(null)
   const [hotelConfig, setHotelConfig] = useState<any | null>(null)
-  const [metodoPago, setMetodoPago] = useState("Efectivo")
+  const [metodosPago, setMetodosPago] = useState<any[]>([])
+  const [metodoPago, setMetodoPago] = useState("")
+  const [efectivoRecibido, setEfectivoRecibido] = useState("")
   const [loading, setLoading] = useState(true)
   const [loadingDetalle, setLoadingDetalle] = useState(false)
   const [culminando, setCulminando] = useState(false)
@@ -31,6 +33,11 @@ export default function VerificarSalidaPage() {
 
   useEffect(() => {
     api.configuracion.obtener().then(setHotelConfig).catch(() => {})
+    api.metodosPago.listar().then((metodos) => {
+      const activos = metodos.filter((metodo: any) => metodo.activo)
+      setMetodosPago(activos)
+      setMetodoPago(activos[0]?.nombre || "")
+    }).catch((err) => setError(err.message))
   }, [])
 
   async function selectReserva(reserva: any) {
@@ -38,11 +45,12 @@ export default function VerificarSalidaPage() {
     setError("")
     setSuccess("")
     setFactura(null)
+    setEfectivoRecibido("")
     setLoadingDetalle(true)
     try {
       const data = await api.ventas.verificarSalida(reserva.reserva_id)
       setVerificacion(data)
-      setMetodoPago("Efectivo")
+      setMetodoPago((actual) => metodosPago.some((metodo) => metodo.nombre === actual) ? actual : metodosPago[0]?.nombre || "")
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -55,7 +63,12 @@ export default function VerificarSalidaPage() {
     setCulminando(true)
     setError("")
     try {
-      const resultado = await api.ventas.culminarSalida(selected.reserva_id, metodoPago)
+      const esEfectivo = metodoPago.trim().toLowerCase() === "efectivo"
+      const recibido = esEfectivo && efectivoRecibido ? Number(efectivoRecibido) : undefined
+      if (esEfectivo && (recibido === undefined || !Number.isFinite(recibido) || recibido < verificacion.total_a_pagar)) {
+        throw new Error("El dinero recibido debe cubrir el total a pagar")
+      }
+      const resultado = await api.ventas.culminarSalida(selected.reserva_id, metodoPago, recibido)
       setFactura(resultado.factura)
       setSuccess("Salida culminada exitosamente. Factura generada.")
       setSelected(null)
@@ -184,11 +197,29 @@ export default function VerificarSalidaPage() {
                       <label className="text-sm font-medium">Método de pago</label>
                       <select className="w-full h-10 px-3 rounded-md border border-gray-300 text-sm" value={metodoPago}
                         onChange={(e) => setMetodoPago(e.target.value)}>
-                        <option value="Efectivo">Efectivo</option>
-                        <option value="Tarjeta">Tarjeta</option>
-                        <option value="Transferencia">Transferencia</option>
+                        {metodosPago.length === 0 && <option value="">Configura un método de pago</option>}
+                        {metodosPago.map((metodo) => <option key={metodo.id} value={metodo.nombre}>{metodo.nombre}</option>)}
                       </select>
                     </div>
+                    {metodoPago.trim().toLowerCase() === "efectivo" && (
+                      <div className="space-y-1">
+                        <label className="text-sm font-medium">Dinero recibido</label>
+                        <input
+                          type="number"
+                          min={verificacion.total_a_pagar}
+                          step="0.01"
+                          className="w-full h-10 px-3 rounded-md border border-gray-300 text-sm"
+                          value={efectivoRecibido}
+                          onChange={(e) => setEfectivoRecibido(e.target.value)}
+                          placeholder={formatCurrency(verificacion.total_a_pagar)}
+                        />
+                        {efectivoRecibido && Number(efectivoRecibido) >= verificacion.total_a_pagar && (
+                          <p className="text-sm font-medium text-green-700">
+                            Cambio a devolver: {formatCurrency(Number(efectivoRecibido) - verificacion.total_a_pagar)}
+                          </p>
+                        )}
+                      </div>
+                    )}
                     <Button className="w-full" onClick={handleCulminar} disabled={culminando || verificacion.total_a_pagar < 0}>
                       {culminando ? "Procesando..." : "Culminar Salida"}
                     </Button>
@@ -285,6 +316,8 @@ export default function VerificarSalidaPage() {
                 {factura.resumen.mora_penalidad > 0 && <div className="flex justify-between text-red-600"><span>Mora/Penalidad</span><span>{formatCurrency(factura.resumen.mora_penalidad)}</span></div>}
                 <div className="mt-3 border-t pt-3 flex justify-between text-base font-bold"><span>Total factura</span><span>{formatCurrency(factura.resumen.total_factura)}</span></div>
                 <div className="no-print flex justify-between font-medium text-blue-700"><span>Cobrado al culminar salida</span><span>{formatCurrency(factura.resumen.total_cobrado_checkout)}</span></div>
+                {factura.resumen.efectivo_recibido > 0 && <div className="flex justify-between"><span>Efectivo recibido</span><span>{formatCurrency(factura.resumen.efectivo_recibido)}</span></div>}
+                {factura.resumen.cambio > 0 && <div className="flex justify-between font-medium text-green-700"><span>Cambio devuelto</span><span>{formatCurrency(factura.resumen.cambio)}</span></div>}
               </div>
             </div>
 

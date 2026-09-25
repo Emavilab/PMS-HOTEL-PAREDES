@@ -33,7 +33,7 @@ function Badge({ className, variant, label, children, ...props }: BadgeProps) {
 
 export { Badge, badgeVariants }
 
-export function statusBadge(status: string) {
+export function statusBadge(status?: string) {
   const map: Record<string, { variant: "success" | "warning" | "danger" | "info" | "purple" | "default"; label: string }> = {
     PENDIENTE: { variant: "warning", label: "Reservación sin confirmar" },
     CONFIRMADA: { variant: "info", label: "Reservación confirmada" },
@@ -48,6 +48,7 @@ export function statusBadge(status: string) {
     LIMPIA: { variant: "success", label: "Limpia" },
     SUCIA: { variant: "warning", label: "Sucia" },
     EN_PROGRESO: { variant: "info", label: "En Progreso" },
+    INSPECCION: { variant: "purple", label: "En Inspección" },
     COMPLETADA: { variant: "success", label: "Completada" },
     INSPECCIONADA: { variant: "purple", label: "Inspeccionada" },
     ABIERTA: { variant: "success", label: "Abierta" },
@@ -55,7 +56,8 @@ export function statusBadge(status: string) {
     activo: { variant: "success", label: "Activo" },
     inactivo: { variant: "danger", label: "Inactivo" },
   }
-  const key = map[status] ? status : status.toLowerCase()
-  const config = map[key] || { variant: "default" as const, label: status }
+  const safeStatus = status || "Sin estado"
+  const key = map[safeStatus] ? safeStatus : safeStatus.toLowerCase()
+  const config = map[key] || { variant: "default" as const, label: safeStatus }
   return { variant: config.variant, label: config.label }
 }

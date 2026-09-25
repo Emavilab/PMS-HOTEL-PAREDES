@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Badge, statusBadge } from "@/components/ui/badge"
-import { AlertTriangle, CheckCircle2, Edit, Plus, Trash2, User } from "lucide-react"
+import { AlertTriangle, CheckCircle2, Edit, Eye, EyeOff, Plus, Trash2, User } from "lucide-react"
 import { useAuth } from "@/hooks/useAuth"
 import type { Usuario } from "@/types"
 
@@ -18,13 +18,32 @@ const roles = [
   { value: "limpieza", label: "Limpieza" },
 ]
 
+const MODULOS = [
+  { key: "dashboard", label: "Dashboard", icon: "LayoutDashboard" },
+  { key: "recepcion", label: "Recepción", icon: "ClipboardCheck" },
+  { key: "verificar_salida", label: "Verificar Salida", icon: "LogOut" },
+  { key: "reservas", label: "Reservas", icon: "Calendar" },
+  { key: "huespedes", label: "Huéspedes", icon: "Users" },
+  { key: "habitaciones", label: "Habitaciones", icon: "BedDouble" },
+  { key: "ventas", label: "Ventas", icon: "ShoppingCart" },
+  { key: "housekeeping", label: "Housekeeping", icon: "Building2" },
+  { key: "facturacion", label: "Facturación", icon: "Receipt" },
+  { key: "caja", label: "Caja", icon: "DollarSign" },
+  { key: "reportes", label: "Reportes", icon: "BarChart3" },
+  { key: "usuarios", label: "Usuarios", icon: "Users" },
+  { key: "auditoria", label: "Auditoría", icon: "Shield" },
+  { key: "configuracion", label: "Configuración", icon: "Settings" },
+]
+
 const initialForm = {
+  usuario: "",
   email: "",
   contrasena: "",
   nombre_completo: "",
   telefono: "",
   rol: "recepcionista",
   estado: "activo",
+  permisos: [] as string[],
 }
 
 type UserForm = typeof initialForm
@@ -38,6 +57,8 @@ type ConfirmConfig = {
   action: () => Promise<void>
 }
 
+type Tab = "datos" | "permisos"
+
 export default function UsuariosPage() {
   const { user: currentUser } = useAuth()
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
@@ -46,9 +67,11 @@ export default function UsuariosPage() {
   const [formDialog, setFormDialog] = useState(false)
   const [editingUser, setEditingUser] = useState<Usuario | null>(null)
   const [form, setForm] = useState<UserForm>(initialForm)
+  const [activeTab, setActiveTab] = useState<Tab>("datos")
   const [error, setError] = useState("")
   const [confirm, setConfirm] = useState<ConfirmConfig | null>(null)
   const [success, setSuccess] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
 
   function loadUsers() {
     setLoading(true)
@@ -65,13 +88,17 @@ export default function UsuariosPage() {
 
   function openForm(usuario?: Usuario) {
     setEditingUser(usuario || null)
+    setActiveTab("datos")
+    setShowPassword(false)
     setForm(usuario ? {
+      usuario: usuario.usuario,
       email: usuario.email,
       contrasena: "",
       nombre_completo: usuario.nombre_completo,
       telefono: usuario.telefono || "",
       rol: usuario.rol,
       estado: usuario.estado,
+      permisos: usuario.permisos || [],
     } : initialForm)
     setError("")
     setFormDialog(true)
@@ -79,9 +106,12 @@ export default function UsuariosPage() {
 
   function validateForm() {
     const email = form.email.trim()
+    const username = form.usuario.trim()
     const name = form.nombre_completo.trim()
     const password = form.contrasena.trim()
 
+    if (username.length < 3) return "El usuario debe tener al menos 3 caracteres"
+    if (!/^[a-zA-Z0-9_-]+$/.test(username)) return "El usuario solo puede contener letras, numeros, guion y guion bajo"
     if (name.length < 3) return "El nombre completo debe tener al menos 3 caracteres"
     if (!/^\S+@\S+\.\S+$/.test(email)) return "Ingresa un correo valido"
     if (!editingUser && password.length < 6) return "La contrasena debe tener al menos 6 caracteres"
@@ -115,12 +145,14 @@ export default function UsuariosPage() {
     setSaving(true)
     setError("")
     try {
-      const payload: Record<string, string | null> = {
+      const payload: Record<string, string | null | string[]> = {
+        usuario: form.usuario.trim().toLowerCase(),
         email: form.email.trim().toLowerCase(),
         nombre_completo: form.nombre_completo.trim(),
         telefono: form.telefono.trim() || null,
         rol: form.rol,
         estado: form.estado,
+        permisos: form.permisos,
       }
       if (form.contrasena.trim()) payload.contrasena = form.contrasena.trim()
       if (!editingUser) delete payload.estado
@@ -171,6 +203,105 @@ export default function UsuariosPage() {
     return <p className="text-gray-500">No tienes permisos para ver esta pagina.</p>
   }
 
+  function renderDatosTab() {
+    return (
+      <div>
+        <Field label="Nombre completo">
+          <Input value={form.nombre_completo} onChange={(e) => setForm({ ...form, nombre_completo: e.target.value })} />
+        </Field>
+        <Field label="Usuario">
+          <Input value={form.usuario} onChange={(e) => setForm({ ...form, usuario: e.target.value })} placeholder="Ej. recepcion" autoComplete="username" />
+        </Field>
+        <Field label="Correo">
+          <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+        </Field>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Telefono">
+            <Input value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} />
+          </Field>
+          <Field label={editingUser ? "Nueva contrasena" : "Contrasena"}>
+            <div className="relative">
+              <Input
+                type={showPassword ? "text" : "password"}
+                value={form.contrasena}
+                onChange={(e) => setForm({ ...form, contrasena: e.target.value })}
+                placeholder={editingUser ? "Dejar igual" : "Minimo 6 caracteres"}
+                className="pr-11"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((visible) => !visible)}
+                className="absolute right-0 top-0 flex h-10 w-10 items-center justify-center text-gray-500 hover:text-gray-800"
+                aria-label={showPassword ? "Ocultar contrasena" : "Mostrar contrasena"}
+                title={showPassword ? "Ocultar contrasena" : "Mostrar contrasena"}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </Field>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Tipo de usuario">
+            <select className="h-10 w-full rounded-md border border-gray-300 px-3 text-sm" value={form.rol} onChange={(e) => setForm({ ...form, rol: e.target.value })}>
+              {roles.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
+            </select>
+          </Field>
+          {editingUser && (
+            <Field label="Estado">
+              <select className="h-10 w-full rounded-md border border-gray-300 px-3 text-sm" value={form.estado} onChange={(e) => setForm({ ...form, estado: e.target.value })}>
+                <option value="activo">Activo</option>
+                <option value="inactivo">Inactivo</option>
+              </select>
+            </Field>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  function renderPermisosTab() {
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-gray-500">
+            Selecciona los módulos a los que este usuario tendrá acceso. Si eliges permisos, se aplicarán como restricción adicional al rol.
+          </p>
+          <span className="shrink-0 text-xs font-medium text-gray-500">
+            {form.permisos.length} de {MODULOS.length} seleccionados
+          </span>
+        </div>
+        <div className="flex gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={() => setForm({ ...form, permisos: MODULOS.map((modulo) => modulo.key) })}>
+            Seleccionar todos
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={() => setForm({ ...form, permisos: [] })}>
+            Limpiar permisos
+          </Button>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 max-h-96 overflow-y-auto p-2 border rounded-md">
+          {MODULOS.map((modulo) => (
+            <label key={modulo.key} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.permisos.includes(modulo.key)}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    permisos: e.target.checked
+                      ? [...form.permisos, modulo.key]
+                      : form.permisos.filter((p) => p !== modulo.key),
+                  })
+                }
+                className="h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+              />
+              <span className="text-sm font-medium">{modulo.label}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -184,6 +315,12 @@ export default function UsuariosPage() {
       </div>
 
       {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+      {success && (
+        <div className="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 p-3 text-sm font-medium text-green-700" role="status">
+          <CheckCircle2 className="h-5 w-5 shrink-0" />
+          <span>{success}</span>
+        </div>
+      )}
 
       <Card>
         <CardContent className="p-0">
@@ -194,6 +331,7 @@ export default function UsuariosPage() {
               <table className="w-full min-w-[820px]">
                 <thead>
                   <tr className="border-b bg-gray-50">
+                    <th className="p-4 text-left text-sm font-medium text-gray-500">Usuario</th>
                     <th className="p-4 text-left text-sm font-medium text-gray-500">Usuario</th>
                     <th className="p-4 text-left text-sm font-medium text-gray-500">Correo</th>
                     <th className="p-4 text-left text-sm font-medium text-gray-500">Telefono</th>
@@ -211,6 +349,7 @@ export default function UsuariosPage() {
                           <span className="font-medium">{usuario.nombre_completo}</span>
                         </div>
                       </td>
+                      <td className="p-4 font-medium">{usuario.usuario}</td>
                       <td className="p-4">{usuario.email}</td>
                       <td className="p-4">{usuario.telefono || "-"}</td>
                       <td className="p-4">{roleLabel(usuario.rol)}</td>
@@ -233,52 +372,57 @@ export default function UsuariosPage() {
         </CardContent>
       </Card>
 
-      <Dialog open={formDialog} onClose={() => setFormDialog(false)} title={editingUser ? "Editar usuario" : "Nuevo usuario"}>
-        <form className="space-y-4" onSubmit={saveUser}>
-          <Field label="Nombre completo">
-            <Input value={form.nombre_completo} onChange={(e) => setForm({ ...form, nombre_completo: e.target.value })} />
-          </Field>
-          <Field label="Correo">
-            <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-          </Field>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Telefono">
-              <Input value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} />
-            </Field>
-            <Field label={editingUser ? "Nueva contrasena" : "Contrasena"}>
-              <Input type="password" value={form.contrasena} onChange={(e) => setForm({ ...form, contrasena: e.target.value })} placeholder={editingUser ? "Dejar igual" : "Minimo 6 caracteres"} />
-            </Field>
+<Dialog open={formDialog} onClose={() => { setFormDialog(false); setActiveTab("datos") }} title={editingUser ? "Editar usuario" : "Nuevo usuario"}>
+        <div className="space-y-4">
+          <div className="flex border-b">
+            <button
+              type="button"
+              className={`flex-1 py-2 px-4 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === "datos"
+                  ? "border-blue-600 text-blue-600"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+              onClick={() => setActiveTab("datos")}
+            >
+              Datos
+            </button>
+            <button
+              type="button"
+              className={`flex-1 py-2 px-4 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === "permisos"
+                  ? "border-blue-600 text-blue-600"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+              onClick={() => setActiveTab("permisos")}
+            >
+              Permisos
+            </button>
           </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Tipo de usuario">
-              <select className="h-10 w-full rounded-md border border-gray-300 px-3 text-sm" value={form.rol} onChange={(e) => setForm({ ...form, rol: e.target.value })}>
-                {roles.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
-              </select>
-            </Field>
-            {editingUser && (
-              <Field label="Estado">
-                <select className="h-10 w-full rounded-md border border-gray-300 px-3 text-sm" value={form.estado} onChange={(e) => setForm({ ...form, estado: e.target.value })}>
-                  <option value="activo">Activo</option>
-                  <option value="inactivo">Inactivo</option>
-                </select>
-              </Field>
-            )}
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={() => setFormDialog(false)}>Cancelar</Button>
-            <Button type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar"}</Button>
-          </div>
-        </form>
-      </Dialog>
+
+          <form className="space-y-4" onSubmit={saveUser}>
+            {activeTab === "datos" && renderDatosTab()}
+            {activeTab === "permisos" && renderPermisosTab()}
+            <div className="flex justify-end gap-2 border-t pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => { setFormDialog(false); setActiveTab("datos") }}
+                disabled={saving}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={saving}>
+                {editingUser ? "Guardar cambios" : "Crear usuario"}
+              </Button>
+            </div>
+          </form>
+        </div>
+        </Dialog>
 
       <ConfirmModal config={confirm} loading={saving} onCancel={() => setConfirm(null)} onConfirm={confirmAction} />
       <SuccessModal message={success} onClose={() => setSuccess("")} />
     </div>
-  )
-}
-
-function roleLabel(role: string) {
-  return roles.find((item) => item.value === role)?.label || role
+)
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -338,3 +482,4 @@ function SuccessModal({ message, onClose }: { message: string; onClose: () => vo
     </Dialog>
   )
 }
+function roleLabel(role: string) { return roles.find((item) => item.value === role)?.label || role }

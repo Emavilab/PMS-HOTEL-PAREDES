@@ -7,24 +7,31 @@ import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { AlertCircle, CheckCircle2 } from "lucide-react"
+import { AlertCircle, CheckCircle2, Eye, EyeOff, LockKeyhole, LogIn, UserRound } from "lucide-react"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("")
+  const [identificador, setIdentificador] = useState("")
   const [password, setPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
+  const [recordar, setRecordar] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
   const [loading, setLoading] = useState(false)
   const [logoUrl, setLogoUrl] = useState("")
   const [fondoUrl, setFondoUrl] = useState("")
   const [hotelName, setHotelName] = useState("Hotel Paredes")
-  const [erroresCampo, setErroresCampo] = useState({ email: "", password: "" })
+  const [erroresCampo, setErroresCampo] = useState({ identificador: "", password: "" })
   const { login } = useAuth()
   const router = useRouter()
 
   useEffect(() => {
+    const savedIdentifier = localStorage.getItem("rememberedIdentifier")
+    if (savedIdentifier) {
+      setIdentificador(savedIdentifier)
+      setRecordar(true)
+    }
     api.configuracion.obtener().then((cfg) => {
       if (cfg.logo_url) setLogoUrl(cfg.logo_url)
       if (cfg.login_fondo_url) setFondoUrl(cfg.login_fondo_url)
@@ -33,11 +40,9 @@ export default function LoginPage() {
   }, [])
 
   function validar(): boolean {
-    const errs = { email: "", password: "" }
-    if (!email.trim()) {
-      errs.email = "El correo electrónico es requerido"
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      errs.email = "Ingrese un correo electrónico válido"
+    const errs = { identificador: "", password: "" }
+    if (!identificador.trim()) {
+      errs.identificador = "El correo o usuario es requerido"
     }
     if (!password) {
       errs.password = "La contraseña es requerida"
@@ -45,20 +50,22 @@ export default function LoginPage() {
       errs.password = "La contraseña debe tener al menos 4 caracteres"
     }
     setErroresCampo(errs)
-    return !errs.email && !errs.password
+    return !errs.identificador && !errs.password
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError("")
     setSuccess("")
-    setErroresCampo({ email: "", password: "" })
+    setErroresCampo({ identificador: "", password: "" })
 
     if (!validar()) return
 
     setLoading(true)
     try {
-      const usuario = await login(email, password)
+      const usuario = await login(identificador, password, recordar)
+      if (recordar) localStorage.setItem("rememberedIdentifier", identificador.trim())
+      else localStorage.removeItem("rememberedIdentifier")
       setSuccess("Inicio de sesión exitoso. Redirigiendo...")
       setTimeout(() => router.push(usuario.rol === "limpieza" ? "/housekeeping" : "/"), 800)
     } catch (err: any) {
@@ -69,7 +76,8 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 relative overflow-hidden">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4 py-8">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(14,165,233,0.22),_transparent_38%),radial-gradient(circle_at_bottom_left,_rgba(37,99,235,0.18),_transparent_35%)]" />
       {fondoUrl && (
         <div
           className="absolute inset-0 bg-cover bg-center"
@@ -79,18 +87,18 @@ export default function LoginPage() {
         </div>
       )}
 
-      <Card className="w-full max-w-md mx-4 relative z-10">
-        <CardHeader className="text-center space-y-4">
+      <Card className="relative z-10 w-full max-w-md border-white/20 bg-white/95 shadow-2xl backdrop-blur">
+        <CardHeader className="space-y-4 text-center">
           {logoUrl && (
             <div className="flex justify-center">
               <img src={`${API_URL}${logoUrl}`} alt={hotelName} className="h-24 w-auto object-contain" />
             </div>
           )}
-          <CardTitle className="text-2xl">{hotelName}</CardTitle>
-          <CardDescription>Sistema de Gestión Hotelera</CardDescription>
+          <CardTitle className="text-2xl font-semibold tracking-tight text-slate-900">{hotelName}</CardTitle>
+          <CardDescription>Ingresa a tu espacio de trabajo</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-5">
             {error && (
               <div className="flex items-center gap-2 p-3 text-sm bg-red-50 text-red-600 rounded-md border border-red-200">
                 <AlertCircle className="h-4 w-4 shrink-0" />
@@ -104,31 +112,47 @@ export default function LoginPage() {
               </div>
             )}
             <div className="space-y-2">
-              <label className="text-sm font-medium">Correo electrónico</label>
-              <Input
-                type="email"
-                placeholder="admin@hotel.com"
-                value={email}
-                onChange={(e) => { setEmail(e.target.value); setErroresCampo({ ...erroresCampo, email: "" }) }}
-                className={erroresCampo.email ? "border-red-400" : ""}
-                required
-              />
-              {erroresCampo.email && <p className="text-xs text-red-500">{erroresCampo.email}</p>}
+              <label className="text-sm font-medium text-slate-700">Correo o usuario</label>
+              <div className="relative">
+                <UserRound className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                <Input
+                  type="text"
+                  placeholder="admin@hotel.com o admin"
+                  value={identificador}
+                  onChange={(e) => { setIdentificador(e.target.value); setErroresCampo({ ...erroresCampo, identificador: "" }) }}
+                  className={`pl-10 ${erroresCampo.identificador ? "border-red-400" : ""}`}
+                  autoComplete="username"
+                  required
+                />
+              </div>
+              {erroresCampo.identificador && <p className="text-xs text-red-500">{erroresCampo.identificador}</p>}
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Contraseña</label>
-              <Input
-                type="password"
-                placeholder="••••••"
-                value={password}
-                onChange={(e) => { setPassword(e.target.value); setErroresCampo({ ...erroresCampo, password: "" }) }}
-                className={erroresCampo.password ? "border-red-400" : ""}
-                required
-              />
+              <label className="text-sm font-medium text-slate-700">Contraseña</label>
+              <div className="relative">
+                <LockKeyhole className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                <Input
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Tu contraseña"
+                  value={password}
+                  onChange={(e) => { setPassword(e.target.value); setErroresCampo({ ...erroresCampo, password: "" }) }}
+                  className={`pl-10 pr-11 ${erroresCampo.password ? "border-red-400" : ""}`}
+                  autoComplete="current-password"
+                  required
+                />
+                <button type="button" onClick={() => setShowPassword((visible) => !visible)} className="absolute right-0 top-0 flex h-10 w-10 items-center justify-center text-slate-400 hover:text-slate-700" aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"} title={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}>
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
               {erroresCampo.password && <p className="text-xs text-red-500">{erroresCampo.password}</p>}
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Iniciando sesión..." : "Iniciar Sesión"}
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+              <input type="checkbox" checked={recordar} onChange={(e) => setRecordar(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+              Recordarme en este dispositivo
+            </label>
+            <Button type="submit" className="w-full bg-blue-600 shadow-lg shadow-blue-600/20 hover:bg-blue-700" disabled={loading}>
+              <LogIn className="mr-2 h-4 w-4" />
+              {loading ? "Iniciando sesión..." : "Iniciar sesión"}
             </Button>
           </form>
         </CardContent>

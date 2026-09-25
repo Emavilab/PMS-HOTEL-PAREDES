@@ -7,10 +7,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog } from "@/components/ui/dialog"
 import { Badge, statusBadge } from "@/components/ui/badge"
-import { formatCurrency, formatDate } from "@/lib/utils"
+import { formatCurrency, formatDate, formatDateTime } from "@/lib/utils"
 import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, DollarSign, Printer } from "lucide-react"
-
-const METODOS = ["Efectivo", "Tarjeta", "Transferencia"]
 
 type CorteData = {
   sesion: any
@@ -30,6 +28,7 @@ export default function CajaPage() {
   const [confirmar, setConfirmar] = useState<null | "abrir" | "cerrar">(null)
   const [exito, setExito] = useState("")
   const [corte, setCorte] = useState<CorteData | null>(null)
+  const [metodosPago, setMetodosPago] = useState<any[]>([])
 
   const [filtroEstado, setFiltroEstado] = useState("")
   const [filtroDesde, setFiltroDesde] = useState("")
@@ -51,6 +50,8 @@ export default function CajaPage() {
       if (hasta) params.hasta = new Date(hasta + "T23:59:59").toISOString()
 
       const data = await api.caja.listar(params)
+      const metodos = await api.metodosPago.listar()
+      setMetodosPago(metodos)
       setSessions(data.items || [])
       setPages(data.pages || 1)
       setTotalSesiones(data.total || 0)
@@ -181,7 +182,7 @@ export default function CajaPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-sm text-gray-500">Apertura</p>
-                    <p className="font-medium">{formatDate(activeSession.abierta_en)}</p>
+                    <p className="font-medium">{formatDateTime(activeSession.abierta_en)}</p>
                   </div>
                   <div>
                     <p className="text-sm text-gray-500">Monto Apertura</p>
@@ -193,12 +194,13 @@ export default function CajaPage() {
                   <p className="font-medium">Desglose de pagos de esta sesión</p>
                   {resumen ? (
                     <>
-                      {METODOS.map((metodo) => {
-                        const monto = resumen.por_metodo?.[metodo] || 0
+                      {metodosPago.map((metodoItem) => {
+                        const metodo = metodoItem.nombre
+                        const monto = Object.entries(resumen.por_metodo || {}).find(([nombre]) => nombre.trim().toLowerCase() === metodo.trim().toLowerCase())?.[1] || 0
                         return (
                           <div key={metodo} className="flex justify-between">
                             <span>{metodo}</span>
-                            <span className={metodo === "Efectivo" ? "font-medium" : "text-gray-500"}>{formatCurrency(monto)}</span>
+                            <span className={metodo.trim().toLowerCase() === "efectivo" ? "font-medium" : "text-gray-500"}>{formatCurrency(Number(monto))}</span>
                           </div>
                         )
                       })}
@@ -274,7 +276,12 @@ export default function CajaPage() {
                     <div key={s.id} className="p-3 bg-gray-50 rounded-md space-y-1">
                       <div className="flex items-center justify-between gap-2">
                         <div>
-                          <p className="text-sm font-medium">{formatDate(s.abierta_en)} · {s.nombre_usuario || "Usuario"}</p>
+                          <p className="text-sm font-medium">
+                            {formatDateTime(s.abierta_en)} · {s.nombre_usuario || "Usuario"}
+                          </p>
+                          {s.cerrada_en && (
+                            <p className="text-xs text-gray-500">Cierre: {formatDateTime(s.cerrada_en)}</p>
+                          )}
                           <p className="text-xs text-gray-500">
                             Apertura: {formatCurrency(s.monto_apertura)}
                             {s.monto_esperado !== null && s.monto_esperado !== undefined && ` | Esperado: ${formatCurrency(s.monto_esperado)}`}
@@ -329,20 +336,23 @@ export default function CajaPage() {
               <p className="text-xs text-gray-500">{new Date().toLocaleString("es-HN")}</p>
             </div>
 
-            <div className="space-y-1">
-              <div className="flex justify-between"><span>Cajero:</span><span className="font-medium">{corte.sesion.nombre_usuario || "-"}</span></div>
-              <div className="flex justify-between"><span>Apertura:</span><span>{formatDate(corte.sesion.abierta_en)}</span></div>
-              {corte.resumen.cerrada_en && <div className="flex justify-between"><span>Cierre:</span><span>{formatDate(corte.resumen.cerrada_en)}</span></div>}
-            </div>
+<div className="space-y-1">
+                <div className="flex justify-between"><span>Cajero:</span><span className="font-medium">{corte.sesion.nombre_usuario || "-"}</span></div>
+                <div className="flex justify-between"><span>Apertura:</span><span>{formatDateTime(corte.sesion.abierta_en)}</span></div>
+                {corte.resumen.cerrada_en && <div className="flex justify-between"><span>Cierre:</span><span>{formatDateTime(corte.resumen.cerrada_en)}</span></div>}
+              </div>
 
             <div className="border-t pt-3 space-y-1">
               <div className="flex justify-between"><span>Fondo inicial:</span><span>{formatCurrency(corte.sesion.monto_apertura)}</span></div>
-              {METODOS.map((metodo) => (
+              {metodosPago.map((metodoItem) => {
+                const metodo = metodoItem.nombre
+                return (
                 <div key={metodo} className="flex justify-between">
                   <span>Pagos {metodo}:</span>
-                  <span className={metodo === "Efectivo" ? "font-medium" : ""}>{formatCurrency(corte.resumen.por_metodo?.[metodo] || 0)}</span>
+                  <span className={metodo.trim().toLowerCase() === "efectivo" ? "font-medium" : ""}>{formatCurrency(Number(Object.entries(corte.resumen.por_metodo || {}).find(([nombre]) => nombre.trim().toLowerCase() === metodo.trim().toLowerCase())?.[1] || 0))}</span>
                 </div>
-              ))}
+                )
+              })}
               <div className="flex justify-between border-t pt-2"><span>Total cobrado:</span><span className="font-medium">{formatCurrency(corte.resumen.total_pagos)} ({corte.resumen.cantidad_pagos})</span></div>
             </div>
 

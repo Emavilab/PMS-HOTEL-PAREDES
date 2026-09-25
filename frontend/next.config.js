@@ -1,6 +1,5 @@
-/** @type {import('next').NextConfig} */
-const nextConfig = {
-  output: 'standalone',
-}
+const { PHASE_PRODUCTION_BUILD } = require("next/constants")
 
-module.exports = nextConfig
+module.exports = (phase) => ({
+  ...(phase === PHASE_PRODUCTION_BUILD ? { output: "standalone" } : {}),
+})

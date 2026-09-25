@@ -8,7 +8,7 @@ interface AuthContextType {
   user: Usuario | null
   token: string | null
   loading: boolean
-  login: (email: string, password: string) => Promise<Usuario>
+  login: (identificador: string, password: string, recordar: boolean) => Promise<Usuario>
   logout: () => void
   isAuthenticated: boolean
 }
@@ -25,11 +25,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null)
     localStorage.removeItem("token")
     localStorage.removeItem("user")
+    sessionStorage.removeItem("token")
+    sessionStorage.removeItem("user")
   }, [])
 
   useEffect(() => {
-    const savedToken = localStorage.getItem("token")
-    const savedUser = localStorage.getItem("user")
+    const savedToken = localStorage.getItem("token") || sessionStorage.getItem("token")
+    const savedUser = localStorage.getItem("user") || sessionStorage.getItem("user")
     if (savedToken && savedUser) {
       try {
         const parsedUser = JSON.parse(savedUser)
@@ -38,7 +40,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(parsedUser)
         api.auth.verificar(savedToken).then((u) => {
           setUser(u)
-          localStorage.setItem("user", JSON.stringify(u))
+          const storage = localStorage.getItem("token") ? localStorage : sessionStorage
+          storage.setItem("user", JSON.stringify(u))
         }).catch(() => {
           logout()
         }).finally(() => setLoading(false))
@@ -51,12 +54,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [logout])
 
-  const login = async (email: string, password: string) => {
-    const result = await api.auth.login(email, password)
+  const login = async (identificador: string, password: string, recordar: boolean) => {
+    const result = await api.auth.login(identificador, password)
+    const storage = recordar ? localStorage : sessionStorage
+    localStorage.removeItem("token")
+    localStorage.removeItem("user")
+    sessionStorage.removeItem("token")
+    sessionStorage.removeItem("user")
     setToken(result.access_token)
     setUser(result.usuario)
-    localStorage.setItem("token", result.access_token)
-    localStorage.setItem("user", JSON.stringify(result.usuario))
+    storage.setItem("token", result.access_token)
+    storage.setItem("user", JSON.stringify(result.usuario))
     return result.usuario
   }
 

@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Badge, statusBadge } from "@/components/ui/badge"
 import { Dialog } from "@/components/ui/dialog"
 import { formatCurrency } from "@/lib/utils"
-import { ShoppingCart, Package, Plus, Minus, Trash2, Check } from "lucide-react"
+import { ShoppingCart, Package, Plus, Minus, Trash2, Check, UserRound, BedDouble, Banknote, CreditCard, Wallet, Search } from "lucide-react"
 
 type Tab = "vender" | "productos"
 
@@ -48,6 +48,7 @@ export default function VentasPage() {
 }
 
 function VenderTab() {
+  const [destino, setDestino] = useState<"particular" | "habitacion">("particular")
   const [ocupadas, setOcupadas] = useState<any[]>([])
   const [selected, setSelected] = useState<any | null>(null)
   const [productos, setProductos] = useState<any[]>([])
@@ -56,6 +57,13 @@ function VenderTab() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
+  const [clienteNombre, setClienteNombre] = useState("")
+  const [metodoPago, setMetodoPago] = useState("Efectivo")
+  const [efectivoRecibido, setEfectivoRecibido] = useState("")
+  const [busqueda, setBusqueda] = useState("")
+  const [busquedaHabitacion, setBusquedaHabitacion] = useState("")
+  const [pagarAhora, setPagarAhora] = useState(false)
+  const [ventaHabitacionAbierta, setVentaHabitacionAbierta] = useState(false)
 
   const loadData = useCallback(() => {
     setLoading(true)
@@ -99,20 +107,49 @@ function VenderTab() {
     })
   }
 
+  function abrirVentaHabitacion(habitacion: any) {
+    setDestino("habitacion")
+    setSelected(habitacion)
+    setCarrito([])
+    setPagarAhora(false)
+    setEfectivoRecibido("")
+    setBusqueda("")
+    setError("")
+    setSuccess("")
+    setVentaHabitacionAbierta(true)
+  }
+
   async function handleVender() {
-    if (!selected || carrito.length === 0) return
+    if ((destino === "habitacion" && !selected) || carrito.length === 0) return
     setSaving(true)
     setError("")
     setSuccess("")
     try {
-      const datos = carrito.map((c) => ({
-        producto_id: c.producto.id,
-        cantidad: c.cantidad,
-        pagado: c.pagado,
-      }))
-      await api.ventas.agregarConsumos(selected.reserva_id, datos)
-      setSuccess("Venta registrada exitosamente")
+      const recibido = mostrarPago && esEfectivo && efectivoRecibido ? Number(efectivoRecibido) : undefined
+      if (mostrarPago && esEfectivo && (recibido === undefined || !Number.isFinite(recibido) || recibido < totalCarrito)) {
+        throw new Error("El dinero recibido debe cubrir el total")
+      }
+      if (destino === "particular") {
+        await api.ventas.crearVentaParticular({
+          cliente_nombre: clienteNombre || "Cliente particular",
+          metodo_pago: metodoPago,
+          efectivo_recibido: recibido,
+          items: carrito.map((c) => ({ producto_id: c.producto.id, cantidad: c.cantidad })),
+        })
+        setSuccess("Venta cobrada y guardada correctamente")
+      } else {
+        await api.ventas.agregarConsumos(selected.reserva_id, carrito.map((c, index) => ({
+          producto_id: c.producto.id,
+          cantidad: c.cantidad,
+          pagado: pagarAhora,
+          ...(index === 0 && pagarAhora ? { metodo_pago: metodoPago, efectivo_recibido: recibido } : {}),
+        })))
+        setSuccess(pagarAhora ? "Consumo cobrado y registrado en Caja" : "Consumo cargado a la habitación")
+      }
       setCarrito([])
+      setEfectivoRecibido("")
+      setClienteNombre("")
+      if (destino === "habitacion") setVentaHabitacionAbierta(false)
       loadData()
     } catch (err: any) {
       setError(err.message)
@@ -122,83 +159,68 @@ function VenderTab() {
   }
 
   const totalCarrito = carrito.reduce((sum, c) => sum + c.producto.precio_unitario * c.cantidad, 0)
+  const productosFiltrados = productos.filter((p) => p.nombre.toLowerCase().includes(busqueda.toLowerCase()) || (p.categoria || "").toLowerCase().includes(busqueda.toLowerCase()))
+  const esEfectivo = metodoPago.toLowerCase() === "efectivo"
+  const habitacionesFiltradas = ocupadas.filter((h) => `${h.habitacion_numero} ${h.piso || ""} ${h.huesped}`.toLowerCase().includes(busquedaHabitacion.toLowerCase()))
+  const mostrarPago = destino === "particular" || pagarAhora
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div className="space-y-5">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <button onClick={() => { setDestino("particular"); setSelected(null); setCarrito([]); setVentaHabitacionAbierta(false); setError("") }} className={`flex items-center gap-3 rounded-lg border-2 p-4 text-left transition ${destino === "particular" ? "border-blue-600 bg-blue-50 text-blue-800" : "border-gray-200 bg-white hover:border-blue-300"}`}>
+          <UserRound className="h-6 w-6" />
+          <span><strong className="block">Cliente particular</strong><small className="text-gray-500">Venta directa y cobro inmediato</small></span>
+        </button>
+        <button onClick={() => { setDestino("habitacion"); setSelected(null); setCarrito([]); setVentaHabitacionAbierta(false); setError("") }} className={`flex items-center gap-3 rounded-lg border-2 p-4 text-left transition ${destino === "habitacion" ? "border-blue-600 bg-blue-50 text-blue-800" : "border-gray-200 bg-white hover:border-blue-300"}`}>
+          <BedDouble className="h-6 w-6" />
+          <span><strong className="block">Cargar a habitación</strong><small className="text-gray-500">Añadir consumo a un huésped alojado</small></span>
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
       <Card className="lg:col-span-2">
         <CardHeader>
-          <CardTitle className="text-lg">Habitaciones Ocupadas</CardTitle>
+          <CardTitle className="text-lg">{destino === "particular" ? "Selecciona productos" : "Selecciona una habitación para vender"}</CardTitle>
         </CardHeader>
         <CardContent>
-          {loading ? (
-            <p className="text-gray-500">Cargando...</p>
-          ) : ocupadas.length === 0 ? (
-            <p className="text-gray-500">No hay habitaciones ocupadas</p>
-          ) : (
-            <div className="space-y-2">
-              {ocupadas.map((h) => (
-                <div
+          {destino === "habitacion" && <>
+            <div className="mb-4 flex items-center gap-2"><Search className="h-4 w-4 text-gray-400" /><Input value={busquedaHabitacion} onChange={(e) => setBusquedaHabitacion(e.target.value)} placeholder="Buscar por número, piso o huésped..." /></div>
+            {loading ? <p className="text-gray-500">Cargando...</p> : habitacionesFiltradas.length === 0 ? <p className="text-gray-500">No hay habitaciones que coincidan</p> : (
+            <div className="mb-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {habitacionesFiltradas.map((h) => (
+                <button
                   key={h.reserva_id}
                   className={`p-3 rounded-md cursor-pointer ${
                     selected?.reserva_id === h.reserva_id
                       ? "bg-blue-100 border border-blue-300"
                       : "bg-gray-50 hover:bg-gray-100 border border-transparent"
                   }`}
-                  onClick={() => { setSelected(h); setError(""); setSuccess("") }}
+                  onClick={() => abrirVentaHabitacion(h)}
                 >
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium">Hab. {h.habitacion_numero} - {h.habitacion_tipo}</p>
+                      <p className="text-xs text-gray-500">Piso: {h.piso || "Sin piso"}</p>
                       <p className="text-sm text-gray-500">{h.huesped}</p>
                     </div>
-                    <p className="text-xs text-gray-400">{h.codigo_confirmacion}</p>
+                    <span className="rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white">Abrir venta</span>
                   </div>
-                </div>
+                </button>
               ))}
-            </div>
-          )}
+            </div>)}</>}
+          {destino === "particular" && <><div className="mb-4 flex items-center gap-2"><Search className="h-4 w-4 text-gray-400" /><Input value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder="Buscar producto por nombre o categoría..." /></div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {productosFiltrados.map((p) => <button key={p.id} onClick={() => addToCart(p, destino === "particular")} className="flex min-h-28 flex-col items-start justify-between rounded-lg border bg-white p-3 text-left shadow-sm transition hover:border-blue-400 hover:bg-blue-50 active:scale-[.98]"><span><span className="block font-medium">{p.nombre}</span><span className="text-xs text-gray-500">{p.categoria || "Producto"}</span></span><span className="flex w-full items-center justify-between font-semibold text-blue-700">{formatCurrency(p.precio_unitario)}<Plus className="h-5 w-5" /></span></button>)}
+          </div></>}
         </CardContent>
       </Card>
 
-      <Card>
+      {destino === "particular" && <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Vender</CardTitle>
+          <CardTitle className="text-lg">Resumen de venta</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {!selected ? (
-            <p className="text-sm text-gray-500">Selecciona una habitación</p>
-          ) : (
-            <>
-              <div className="bg-blue-50 p-2 rounded-md text-sm">
-                <p className="font-medium">Hab. {selected.habitacion_numero}</p>
-                <p className="text-xs text-gray-600">{selected.huesped}</p>
-              </div>
-
-              {productos.length === 0 ? (
-                <p className="text-sm text-gray-500">No hay productos. Ve a la pestaña Productos.</p>
-              ) : (
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold text-gray-500 uppercase">Productos</p>
-                  <div className="max-h-60 overflow-auto space-y-1">
-                    {productos.map((p) => (
-                      <div key={p.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-md text-sm">
-                        <div className="min-w-0">
-                          <p className="font-medium truncate">{p.nombre}</p>
-                          <p className="text-xs text-gray-500">{formatCurrency(p.precio_unitario)}</p>
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button onClick={() => addToCart(p, true)} className="p-1 text-green-600 hover:bg-green-100 rounded" title="Pagar ahora">
-                            <Check className="h-4 w-4" />
-                          </button>
-                          <button onClick={() => addToCart(p, false)} className="p-1 text-blue-600 hover:bg-blue-100 rounded" title="Pagar luego">
-                            <Plus className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+          <Input value={clienteNombre} onChange={(e) => setClienteNombre(e.target.value)} placeholder="Nombre del cliente (opcional)" />
 
               {carrito.length > 0 && (
                 <div className="space-y-2 border-t pt-3">
@@ -219,26 +241,46 @@ function VenderTab() {
                       </button>
                     </div>
                   ))}
-                  <div className="text-sm font-semibold text-right">Total: {formatCurrency(totalCarrito)}</div>
+                  <div className="border-t pt-2 text-right text-base font-bold">Total: {formatCurrency(totalCarrito)}</div>
                 </div>
               )}
+
+              {carrito.length > 0 && <div className="space-y-2 border-t pt-3"><p className="text-sm font-medium">Forma de pago</p><div className="grid grid-cols-3 gap-2">{["Efectivo", "Tarjeta", "Transferencia"].map((metodo) => <button key={metodo} onClick={() => setMetodoPago(metodo)} className={`flex flex-col items-center gap-1 rounded-md border p-2 text-xs ${metodoPago === metodo ? "border-blue-600 bg-blue-50 text-blue-700" : "border-gray-200"}`}>{metodo === "Efectivo" ? <Banknote className="h-5 w-5" /> : metodo === "Tarjeta" ? <CreditCard className="h-5 w-5" /> : <Wallet className="h-5 w-5" />}{metodo}</button>)}</div>{esEfectivo && <><Input type="number" min={totalCarrito} step="0.01" value={efectivoRecibido} onChange={(e) => setEfectivoRecibido(e.target.value)} placeholder="Dinero recibido" />{efectivoRecibido && Number(efectivoRecibido) >= totalCarrito && <p className="text-sm font-medium text-green-700">Cambio: {formatCurrency(Number(efectivoRecibido) - totalCarrito)}</p>}</>}</div>}
 
               {error && <p className="text-sm text-red-600">{error}</p>}
               {success && <p className="text-sm text-green-600">{success}</p>}
 
               <Button className="w-full" onClick={handleVender} disabled={carrito.length === 0 || saving}>
-                {saving ? "Registrando..." : "Registrar Venta"}
+                {saving ? "Procesando..." : destino === "particular" ? "Cobrar venta" : "Cargar a habitación"}
               </Button>
-            </>
-          )}
         </CardContent>
-      </Card>
+      </Card>}
+    </div>
+    <Dialog open={ventaHabitacionAbierta} onClose={() => setVentaHabitacionAbierta(false)} title={`Venta para Hab. ${selected?.habitacion_numero || ""}`} className="max-w-4xl">
+      {selected && <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+        <div className="space-y-4">
+          <div className="rounded-md bg-blue-50 p-3 text-sm"><p className="font-semibold">{selected.huesped}</p><p>Habitación {selected.habitacion_numero} · Piso {selected.piso || "Sin piso"}</p></div>
+          <div className="flex items-center gap-2"><Search className="h-4 w-4 text-gray-400" /><Input value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder="Buscar producto por nombre o categoría..." /></div>
+          <div className="grid max-h-[45vh] grid-cols-2 gap-3 overflow-y-auto pr-1 sm:grid-cols-3">
+            {productosFiltrados.map((p) => <button key={p.id} onClick={() => addToCart(p, false)} className="flex min-h-24 flex-col items-start justify-between rounded-lg border bg-white p-3 text-left shadow-sm transition hover:border-blue-400 hover:bg-blue-50 active:scale-[.98]"><span><span className="block font-medium">{p.nombre}</span><span className="text-xs text-gray-500">{p.categoria || "Producto"}</span></span><span className="flex w-full items-center justify-between font-semibold text-blue-700">{formatCurrency(p.precio_unitario)}<Plus className="h-5 w-5" /></span></button>)}
+          </div>
+        </div>
+        <div className="space-y-4 rounded-md border p-4">
+          <div className="grid grid-cols-2 gap-2"><button onClick={() => setPagarAhora(false)} className={`rounded-md border p-2 text-sm ${!pagarAhora ? "border-blue-600 bg-blue-50 text-blue-700" : "border-gray-200"}`}>Cargar a cuenta</button><button onClick={() => setPagarAhora(true)} className={`rounded-md border p-2 text-sm ${pagarAhora ? "border-green-600 bg-green-50 text-green-700" : "border-gray-200"}`}>Pagar al momento</button></div>
+          {carrito.length === 0 ? <p className="text-sm text-gray-500">Selecciona productos para agregarlos al consumo.</p> : <div className="space-y-2">{carrito.map((c) => <div key={c.producto.id} className="flex items-center justify-between gap-2 rounded-md bg-gray-50 p-2 text-sm"><span className="min-w-0 truncate">{c.cantidad} x {c.producto.nombre}</span><span className="flex items-center gap-2"><strong>{formatCurrency(c.producto.precio_unitario * c.cantidad)}</strong><button onClick={() => removeFromCart(c.producto.id, false)} className="text-red-500" title="Quitar producto"><Minus className="h-4 w-4" /></button></span></div>)}<div className="border-t pt-2 text-right text-lg font-bold">{formatCurrency(totalCarrito)}</div></div>}
+          {pagarAhora && carrito.length > 0 && <div className="space-y-2"><p className="text-sm font-medium">Forma de pago</p><div className="grid grid-cols-3 gap-2">{["Efectivo", "Tarjeta", "Transferencia"].map((metodo) => <button key={metodo} onClick={() => setMetodoPago(metodo)} className={`rounded-md border p-2 text-xs ${metodoPago === metodo ? "border-blue-600 bg-blue-50 text-blue-700" : "border-gray-200"}`}>{metodo}</button>)}</div>{esEfectivo && <Input type="number" min={totalCarrito} step="0.01" value={efectivoRecibido} onChange={(e) => setEfectivoRecibido(e.target.value)} placeholder="Dinero recibido" />}</div>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <Button className="w-full" onClick={handleVender} disabled={carrito.length === 0 || saving}>{saving ? "Procesando..." : pagarAhora ? "Cobrar y registrar consumo" : "Registrar consumo"}</Button>
+        </div>
+      </div>}
+    </Dialog>
     </div>
   )
 }
 
 function ProductosTab() {
   const [productos, setProductos] = useState<any[]>([])
+  const [categorias, setCategorias] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
@@ -252,6 +294,7 @@ function ProductosTab() {
   }, [])
 
   useEffect(() => { loadData() }, [loadData])
+  useEffect(() => { api.ventas.listarCategorias().then(setCategorias).catch((err) => setError(err.message)) }, [])
 
   function openNew() {
     setEditId(null)
@@ -297,8 +340,6 @@ function ProductosTab() {
     }
   }
 
-  const categorias = Array.from(new Set(productos.map((p) => p.categoria).filter(Boolean)))
-
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -330,11 +371,7 @@ function ProductosTab() {
               <select className="w-full h-10 px-3 rounded-md border border-gray-300 text-sm" value={form.categoria}
                 onChange={(e) => setForm({ ...form, categoria: e.target.value })}>
                 <option value="">Sin categoría</option>
-                <option value="Bebidas">Bebidas</option>
-                <option value="Comida">Comida</option>
-                <option value="Lavandería">Lavandería</option>
-                <option value="Snacks">Snacks</option>
-                <option value="Otros">Otros</option>
+                {categorias.map((categoria) => <option key={categoria.id} value={categoria.nombre}>{categoria.nombre}</option>)}
               </select>
             </div>
           </div>

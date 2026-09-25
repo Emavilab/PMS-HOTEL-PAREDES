@@ -5,33 +5,55 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge, statusBadge } from "@/components/ui/badge"
 import { formatCurrency } from "@/lib/utils"
 import { api } from "@/lib/api"
-import { Calendar, Users, BedDouble, DollarSign } from "lucide-react"
-import type { ReservaLista } from "@/types"
+import { Calendar, Users, BedDouble, DollarSign, ArrowRight, RefreshCw } from "lucide-react"
 import Link from "next/link"
+import { useAuth } from "@/hooks/useAuth"
+
+type OperacionDia = {
+  id: string
+  huesped: string
+  codigo_confirmacion: string
+  fecha_entrada: string
+  fecha_salida: string
+  habitacion: string | null
+  estado: string
+  adultos?: number
+  ninos?: number
+  total?: number
+}
 
 export default function DashboardPage() {
-  const [arrivals, setArrivals] = useState<any[]>([])
-  const [departures, setDepartures] = useState<any[]>([])
+  const { user } = useAuth()
+  const [arrivals, setArrivals] = useState<OperacionDia[]>([])
+  const [departures, setDepartures] = useState<OperacionDia[]>([])
+  const [availableRooms, setAvailableRooms] = useState(0)
+  const [todayIncome, setTodayIncome] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
   const today = new Date().toLocaleDateString("es-HN", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
   })
 
   useEffect(() => {
+    const date = new Date().toISOString().slice(0, 10)
     Promise.all([
       api.reportes.llegadas(),
       api.reportes.salidas(),
-    ]).then(([arr, dep]) => {
+      api.habitaciones.listar(),
+      api.reportes.ingresos(date, date),
+    ]).then(([arr, dep, rooms, income]) => {
       setArrivals(arr)
       setDepartures(dep)
-    }).finally(() => setLoading(false))
+      setAvailableRooms(rooms.filter((room: any) => room.estado_operativo === "DISPONIBLE").length)
+      setTodayIncome(Number(income.total_pagos || 0))
+    }).catch((err: Error) => setError(err.message || "No se pudo cargar el dashboard")).finally(() => setLoading(false))
   }, [])
 
   const stats = [
     { label: "Llegadas hoy", value: arrivals.length, icon: Calendar, color: "text-blue-600 bg-blue-100" },
     { label: "Salidas hoy", value: departures.length, icon: Users, color: "text-orange-600 bg-orange-100" },
-    { label: "Disponibles", value: "-", icon: BedDouble, color: "text-green-600 bg-green-100" },
-    { label: "Ingresos hoy", value: formatCurrency(0), icon: DollarSign, color: "text-purple-600 bg-purple-100" },
+    { label: "Habitaciones disponibles", value: availableRooms, icon: BedDouble, color: "text-green-600 bg-green-100" },
+    { label: "Cobros de hoy", value: formatCurrency(todayIncome), icon: DollarSign, color: "text-purple-600 bg-purple-100" },
   ]
 
   return (
@@ -60,6 +82,14 @@ export default function DashboardPage() {
         })}
       </div>
 
+      {error && <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700"><span>{error}</span><button type="button" onClick={() => window.location.reload()} className="inline-flex items-center gap-2 rounded border border-red-200 bg-white px-3 py-1.5 hover:bg-red-100"><RefreshCw className="h-4 w-4" /> Reintentar</button></div>}
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <Link href="/recepcion" className="flex items-center justify-between rounded-md border bg-white p-4 text-sm font-medium hover:border-blue-300 hover:bg-blue-50"><span>Ir a recepción</span><ArrowRight className="h-4 w-4" /></Link>
+        <Link href="/housekeeping" className="flex items-center justify-between rounded-md border bg-white p-4 text-sm font-medium hover:border-blue-300 hover:bg-blue-50"><span>Revisar limpieza</span><ArrowRight className="h-4 w-4" /></Link>
+        {(user?.rol === "admin" || user?.rol === "gerente") && <Link href="/caja" className="flex items-center justify-between rounded-md border bg-white p-4 text-sm font-medium hover:border-blue-300 hover:bg-blue-50"><span>Gestionar caja</span><ArrowRight className="h-4 w-4" /></Link>}
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
           <CardHeader>
@@ -79,12 +109,12 @@ export default function DashboardPage() {
                     className="flex items-center justify-between p-3 bg-gray-50 rounded-md hover:bg-gray-100 transition-colors"
                   >
                     <div>
-                      <p className="font-medium">{arr.huesped_nombre}</p>
+                      <p className="font-medium">{arr.huesped}</p>
                       <p className="text-sm text-gray-500">
-                        {arr.adultos} adultos{arr.ninos > 0 ? `, ${arr.ninos} niños` : ""}
+                        Habitación {arr.habitacion || "sin asignar"} · Entrada {arr.fecha_entrada}
                       </p>
                     </div>
-                    <Badge {...statusBadge(arr.status)} />
+                    <Badge {...statusBadge(arr.estado)} />
                   </Link>
                 ))}
               </div>
@@ -110,10 +140,10 @@ export default function DashboardPage() {
                     className="flex items-center justify-between p-3 bg-gray-50 rounded-md hover:bg-gray-100 transition-colors"
                   >
                     <div>
-                      <p className="font-medium">{dep.huesped_nombre}</p>
-                      <p className="text-sm text-gray-500">Total: {formatCurrency(dep.total)}</p>
+                      <p className="font-medium">{dep.huesped}</p>
+                      <p className="text-sm text-gray-500">Total: {formatCurrency(dep.total ?? 0)}</p>
                     </div>
-                    <Badge {...statusBadge(dep.status)} />
+                    <Badge {...statusBadge(dep.estado)} />
                   </Link>
                 ))}
               </div>

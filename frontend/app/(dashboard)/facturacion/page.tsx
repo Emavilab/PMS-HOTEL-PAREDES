@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { api } from "@/lib/api"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { formatCurrency } from "@/lib/utils"
 import { FileText, Printer, Receipt } from "lucide-react"
 
@@ -18,9 +19,20 @@ export default function FacturacionPage() {
   const [facturaSel, setFacturaSel] = useState<any | null>(null)
   const [hotelConfig, setHotelConfig] = useState<any | null>(null)
   const [loading, setLoading] = useState(true)
+  const [metodosPago, setMetodosPago] = useState<any[]>([])
+  const [montoPago, setMontoPago] = useState("")
+  const [metodoPago, setMetodoPago] = useState("")
+  const [referenciaPago, setReferenciaPago] = useState("")
+  const [guardandoPago, setGuardandoPago] = useState(false)
+  const [errorPago, setErrorPago] = useState("")
 
   useEffect(() => {
     api.configuracion.obtener().then(setHotelConfig).catch(() => {})
+    api.metodosPago.listar().then((metodos) => {
+      const activos = metodos.filter((metodo: any) => metodo.activo)
+      setMetodosPago(activos)
+      setMetodoPago(activos[0]?.nombre || "")
+    }).catch(() => {})
     api.reservas.listar({ estado: "CHECKED_IN", per_page: "200" }).then((data) => {
       setReservations(data.items || [])
       setLoading(false)
@@ -44,7 +56,43 @@ export default function FacturacionPage() {
     setFolio(f)
   }
 
-  useEffect(() => { if (selectedId) loadFolio() }, [selectedId])
+  useEffect(() => {
+    if (selectedId) {
+      setMontoPago("")
+      setReferenciaPago("")
+      setErrorPago("")
+      loadFolio()
+    }
+  }, [selectedId])
+
+  async function registrarAbono() {
+    if (!selectedId || !folio) return
+    const monto = Number(montoPago)
+    if (!Number.isFinite(monto) || monto <= 0) {
+      setErrorPago("Indica un monto mayor que cero")
+      return
+    }
+    if (monto > Number(folio.saldo) + 0.01) {
+      setErrorPago("El monto no puede superar el saldo pendiente")
+      return
+    }
+    if (!metodoPago) {
+      setErrorPago("Selecciona un método de pago")
+      return
+    }
+    setGuardandoPago(true)
+    setErrorPago("")
+    try {
+      await api.facturacion.agregarPago(selectedId, { monto, metodo_pago: metodoPago, referencia: referenciaPago || undefined })
+      await loadFolio()
+      setMontoPago("")
+      setReferenciaPago("")
+    } catch (err: any) {
+      setErrorPago(err.message)
+    } finally {
+      setGuardandoPago(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -263,6 +311,19 @@ export default function FacturacionPage() {
                       <span>{formatCurrency(folio.saldo)}</span>
                     </div>
                   </div>
+
+                  {folio.saldo > 0 && (
+                    <div className="space-y-3 rounded-md border border-blue-100 bg-blue-50 p-4">
+                      <h3 className="font-medium text-blue-950">Registrar abono</h3>
+                      {errorPago && <p className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">{errorPago}</p>}
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div><label className="text-sm font-medium">Monto</label><Input type="number" min="0.01" max={folio.saldo} step="0.01" value={montoPago} onChange={(e) => setMontoPago(e.target.value)} placeholder={String(folio.saldo)} /></div>
+                        <div><label className="text-sm font-medium">Método</label><select className="mt-1 h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm" value={metodoPago} onChange={(e) => setMetodoPago(e.target.value)}><option value="">Seleccionar...</option>{metodosPago.map((metodo) => <option key={metodo.id} value={metodo.nombre}>{metodo.nombre}</option>)}</select></div>
+                      </div>
+                      <div><label className="text-sm font-medium">Referencia</label><Input value={referenciaPago} onChange={(e) => setReferenciaPago(e.target.value)} placeholder="Transferencia, recibo o nota" /></div>
+                      <Button onClick={registrarAbono} disabled={guardandoPago}>{guardandoPago ? "Guardando..." : "Registrar abono"}</Button>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>

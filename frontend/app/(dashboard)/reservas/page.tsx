@@ -27,6 +27,7 @@ const ESTADOS_RESERVA = [
   { value: "CONFIRMADA", label: "Reservación confirmada", className: "border-blue-200 bg-blue-50 text-blue-950" },
   { value: "CHECKED_IN", label: "Ingreso", className: "border-green-200 bg-green-50 text-green-950" },
   { value: "NO_SHOW", label: "No ingreso", className: "border-red-200 bg-red-50 text-red-950" },
+  { value: "CANCELADA", label: "Cancelada", className: "border-red-200 bg-red-50 text-red-950" },
   { value: "CHECKED_OUT", label: "Hospedaje terminado", className: "border-gray-200 bg-gray-50 text-gray-950" },
 ]
 

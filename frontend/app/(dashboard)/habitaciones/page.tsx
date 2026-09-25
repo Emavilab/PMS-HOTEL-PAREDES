@@ -8,13 +8,13 @@ import { Button } from "@/components/ui/button"
 import { Dialog } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { AlertTriangle, CheckCircle2, Edit, Plus, Trash2 } from "lucide-react"
-import type { Habitacion, TipoHabitacion } from "@/types"
+import type { Habitacion, Piso, TipoHabitacion } from "@/types"
 import { formatCurrency } from "@/lib/utils"
 
 const roomInitial = {
   tipo_habitacion_id: "",
   numero: "",
-  piso: "",
+  piso_id: "",
   estado_operativo: "DISPONIBLE",
   estado_limpieza: "LIMPIA",
   notas: "",
@@ -31,6 +31,12 @@ const typeInitial = {
   estado: "activo",
 }
 
+const floorInitial = {
+  nombre: "",
+  descripcion: "",
+  estado: "ACTIVO",
+}
+
 type ConfirmConfig = {
   open: boolean
   title: string
@@ -42,24 +48,28 @@ type ConfirmConfig = {
 
 export default function HabitacionesPage() {
   const [rooms, setRooms] = useState<Habitacion[]>([])
+  const [floorsList, setFloorsList] = useState<Piso[]>([])
   const [roomTypes, setRoomTypes] = useState<TipoHabitacion[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [saving, setSaving] = useState(false)
   const [roomDialog, setRoomDialog] = useState(false)
   const [typeDialog, setTypeDialog] = useState(false)
+  const [floorDialog, setFloorDialog] = useState(false)
   const [editingRoom, setEditingRoom] = useState<Habitacion | null>(null)
   const [editingType, setEditingType] = useState<TipoHabitacion | null>(null)
   const [roomForm, setRoomForm] = useState(roomInitial)
   const [typeForm, setTypeForm] = useState(typeInitial)
+  const [floorForm, setFloorForm] = useState(floorInitial)
   const [confirm, setConfirm] = useState<ConfirmConfig | null>(null)
 
   function loadData() {
     setLoading(true)
     setError("")
-    Promise.all([api.habitaciones.listar(), api.tiposHabitacion.listar()])
-      .then(([r, rt]) => {
+    Promise.all([api.habitaciones.listar(), api.habitaciones.listarPisos(), api.tiposHabitacion.listar()])
+      .then(([r, floors, rt]) => {
         setRooms(r)
+        setFloorsList(floors)
         setRoomTypes(rt)
       })
       .catch((err) => setError(err.message || "No se pudo cargar habitaciones"))
@@ -70,15 +80,17 @@ export default function HabitacionesPage() {
     loadData()
   }, [])
 
-  const floors = useMemo(
-    () => Array.from(new Set(rooms.map((room) => room.piso).filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
-    [rooms]
-  )
-
   const activeRoomTypes = useMemo(
     () => roomTypes.filter((type) => type.estado.toLowerCase() === "activo"),
     [roomTypes]
   )
+
+  const selectableFloors = useMemo(() => {
+    const activos = floorsList.filter((floor) => floor.estado === "ACTIVO")
+    if (!editingRoom || activos.some((floor) => floor.id === editingRoom.piso_id)) return activos
+    const currentFloor = floorsList.find((floor) => floor.id === editingRoom.piso_id)
+    return currentFloor ? [currentFloor, ...activos] : activos
+  }, [editingRoom, floorsList])
 
   const selectableRoomTypes = useMemo(() => {
     if (!editingRoom || activeRoomTypes.some((type) => type.id === editingRoom.tipo_habitacion_id)) return activeRoomTypes
@@ -101,11 +113,11 @@ export default function HabitacionesPage() {
     setRoomForm(room ? {
       tipo_habitacion_id: room.tipo_habitacion_id,
       numero: room.numero,
-      piso: room.piso || "",
+      piso_id: room.piso_id || "",
       estado_operativo: room.estado_operativo,
       estado_limpieza: room.estado_limpieza,
       notas: room.notas || "",
-    } : { ...roomInitial, piso: floor && floor !== "Sin piso" ? floor : "" })
+    } : { ...roomInitial, piso_id: floorsList.find((item) => item.nombre === floor)?.id || "" })
     setError("")
     setRoomDialog(true)
   }
@@ -126,10 +138,16 @@ export default function HabitacionesPage() {
     setTypeDialog(true)
   }
 
+  function openFloorForm() {
+    setFloorForm(floorInitial)
+    setError("")
+    setFloorDialog(true)
+  }
+
   function saveRoom(e: FormEvent) {
     e.preventDefault()
-    if (!roomForm.numero || !roomForm.tipo_habitacion_id) {
-      setError("Indica numero y tipo de habitacion")
+    if (!roomForm.numero || !roomForm.tipo_habitacion_id || !roomForm.piso_id) {
+      setError("Indica numero, piso y tipo de habitacion")
       return
     }
     if (selectedTypeInactive && (!editingRoom || editingRoom.tipo_habitacion_id !== roomForm.tipo_habitacion_id)) {
@@ -141,7 +159,7 @@ export default function HabitacionesPage() {
       title: editingRoom ? "Confirmar cambios" : "Crear habitacion",
       message: editingRoom
         ? `Se actualizaran los datos de la habitacion ${roomForm.numero}.`
-        : `Se creara la habitacion ${roomForm.numero} en el piso ${roomForm.piso || "sin piso"}.`,
+        : `Se creara la habitacion ${roomForm.numero} en el piso ${floorsList.find((floor) => floor.id === roomForm.piso_id)?.nombre || "seleccionado"}.`,
       confirmLabel: editingRoom ? "Guardar cambios" : "Crear habitacion",
       variant: "default",
       action: persistRoom,
@@ -152,7 +170,7 @@ export default function HabitacionesPage() {
     setSaving(true)
     setError("")
     try {
-      const payload = { ...roomForm, piso: roomForm.piso || null, notas: roomForm.notas || null }
+      const payload = { ...roomForm, notas: roomForm.notas || null }
       if (editingRoom) await api.habitaciones.actualizar(editingRoom.id, payload)
       else await api.habitaciones.crear(payload)
       setRoomDialog(false)
@@ -200,6 +218,40 @@ export default function HabitacionesPage() {
       loadData()
     } catch (err: any) {
       setError(err.message || "No se pudo guardar el tipo de habitacion")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function saveFloor(e: FormEvent) {
+    e.preventDefault()
+    if (!floorForm.nombre.trim()) {
+      setError("Indica el nombre del piso")
+      return
+    }
+    setConfirm({
+      open: true,
+      title: "Crear piso",
+      message: `Se creara el piso ${floorForm.nombre}.`,
+      confirmLabel: "Crear piso",
+      variant: "default",
+      action: persistFloor,
+    })
+  }
+
+  async function persistFloor() {
+    setSaving(true)
+    setError("")
+    try {
+      await api.habitaciones.crearPiso({
+        nombre: floorForm.nombre.trim(),
+        descripcion: floorForm.descripcion.trim() || null,
+        estado: floorForm.estado,
+      })
+      setFloorDialog(false)
+      loadData()
+    } catch (err: any) {
+      setError(err.message || "No se pudo guardar el piso")
     } finally {
       setSaving(false)
     }
@@ -255,7 +307,7 @@ export default function HabitacionesPage() {
           <p className="text-sm text-gray-500">Administra pisos, habitaciones y tipos desde un solo apartado.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => openTypeForm()}><Plus className="mr-2 h-4 w-4" /> Tipo</Button>
+          <Button variant="outline" onClick={openFloorForm}><Plus className="mr-2 h-4 w-4" /> Piso</Button>
           <Button onClick={() => openRoomForm()}><Plus className="mr-2 h-4 w-4" /> Habitacion</Button>
         </div>
       </div>
@@ -341,9 +393,11 @@ export default function HabitacionesPage() {
         <form className="space-y-4" onSubmit={saveRoom}>
           <Field label="Numero"><Input value={roomForm.numero} onChange={(e) => setRoomForm({ ...roomForm, numero: e.target.value })} /></Field>
           <Field label="Piso">
-            <Input list="pisos" placeholder="Ej. 1, 2, Torre A" value={roomForm.piso} onChange={(e) => setRoomForm({ ...roomForm, piso: e.target.value })} />
-            <datalist id="pisos">{floors.map((floor) => <option key={floor} value={floor} />)}</datalist>
-            <p className="mt-1 text-xs text-gray-500">Escribe un piso nuevo para crearlo al guardar la habitacion.</p>
+            <select className="h-10 w-full rounded-md border border-gray-300 px-3 text-sm" value={roomForm.piso_id} onChange={(e) => setRoomForm({ ...roomForm, piso_id: e.target.value })}>
+              <option value="">Seleccionar piso</option>
+              {selectableFloors.map((floor) => <option key={floor.id} value={floor.id}>{floor.nombre}{floor.estado !== "ACTIVO" ? " (inactivo)" : ""}</option>)}
+            </select>
+            {floorsList.length === 0 && <p className="mt-1 rounded-md bg-yellow-50 px-3 py-2 text-xs text-yellow-800">Crea un piso antes de agregar habitaciones.</p>}
           </Field>
           <Field label="Tipo de habitacion">
             <select className="h-10 w-full rounded-md border border-gray-300 px-3 text-sm" value={roomForm.tipo_habitacion_id} onChange={(e) => setRoomForm({ ...roomForm, tipo_habitacion_id: e.target.value })}>
@@ -381,6 +435,20 @@ export default function HabitacionesPage() {
           </div>
           <Field label="Notas"><Input value={roomForm.notas} onChange={(e) => setRoomForm({ ...roomForm, notas: e.target.value })} /></Field>
           <DialogActions saving={saving} onCancel={() => setRoomDialog(false)} />
+        </form>
+      </Dialog>
+
+      <Dialog open={floorDialog} onClose={() => setFloorDialog(false)} title="Nuevo piso">
+        <form className="space-y-4" onSubmit={saveFloor}>
+          <Field label="Nombre"><Input required maxLength={50} placeholder="Ej. Primer piso" value={floorForm.nombre} onChange={(e) => setFloorForm({ ...floorForm, nombre: e.target.value })} /></Field>
+          <Field label="Descripción"><Input value={floorForm.descripcion} onChange={(e) => setFloorForm({ ...floorForm, descripcion: e.target.value })} placeholder="Descripción opcional" /></Field>
+          <Field label="Estado">
+            <select className="h-10 w-full rounded-md border border-gray-300 px-3 text-sm" value={floorForm.estado} onChange={(e) => setFloorForm({ ...floorForm, estado: e.target.value })}>
+              <option value="ACTIVO">Activo</option>
+              <option value="INACTIVO">Inactivo</option>
+            </select>
+          </Field>
+          <DialogActions saving={saving} onCancel={() => setFloorDialog(false)} />
         </form>
       </Dialog>
 

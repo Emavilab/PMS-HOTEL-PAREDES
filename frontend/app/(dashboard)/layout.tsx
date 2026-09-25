@@ -19,11 +19,17 @@ import {
   X,
   Building2,
   ShoppingCart,
+  Bell,
+  AlertTriangle,
+  CalendarClock,
+  Check,
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { api } from "@/lib/api"
+import type { Notificacion } from "@/types"
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "gerente", "recepcionista"] },
@@ -42,17 +48,48 @@ const navItems = [
   { href: "/configuracion", label: "Configuración", icon: Settings, roles: ["admin"] },
 ]
 
+function moduloDesdeRuta(pathname: string) {
+  if (pathname === "/") return "dashboard"
+  return pathname.slice(1).split("/")[0].replaceAll("-", "_")
+}
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, logout, isAuthenticated } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [notifications, setNotifications] = useState<Notificacion[]>([])
+  const [readNotifications, setReadNotifications] = useState<string[]>([])
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
       router.push("/login")
     }
   }, [loading, isAuthenticated, router])
+
+  useEffect(() => {
+    if (!isAuthenticated) return
+    const saved = localStorage.getItem("hotel-paredes-notificaciones-leidas")
+    if (saved) setReadNotifications(JSON.parse(saved))
+    api.reportes.notificaciones().then(setNotifications).catch(() => setNotifications([]))
+    const interval = window.setInterval(() => {
+      api.reportes.notificaciones().then(setNotifications).catch(() => undefined)
+    }, 120000)
+    return () => window.clearInterval(interval)
+  }, [isAuthenticated])
+
+  function marcarLeida(id: string) {
+    const next = Array.from(new Set([...readNotifications, id]))
+    setReadNotifications(next)
+    localStorage.setItem("hotel-paredes-notificaciones-leidas", JSON.stringify(next))
+  }
+
+  function marcarTodasLeidas() {
+    const next = notifications.map((notification) => notification.id)
+    setReadNotifications(next)
+    localStorage.setItem("hotel-paredes-notificaciones-leidas", JSON.stringify(next))
+  }
 
   if (loading) {
     return (
@@ -64,7 +101,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (!user) return null
 
-  const filteredItems = navItems.filter((item) => item.roles.includes(user.rol as any))
+  const permisos = Array.isArray(user.permisos) ? user.permisos : []
+  const filteredItems = navItems.filter((item) => {
+    if (!item.roles.includes(user.rol as any)) return false
+    if (user.rol === "admin" || permisos.length === 0) return true
+    const modulo = moduloDesdeRuta(item.href)
+    return permisos.includes(modulo)
+  })
+
+  const tieneAccesoRuta =
+    user.rol === "admin" ||
+    permisos.length === 0 ||
+    permisos.includes(moduloDesdeRuta(pathname))
 
   function handleLogout() {
     logout()
@@ -140,6 +188,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <Menu className="h-5 w-5" />
           </button>
           <div className="flex-1" />
+          <div className="relative mr-4">
+            <button type="button" onClick={() => setNotificationsOpen((open) => !open)} className="relative rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900" title="Notificaciones">
+              <Bell className="h-5 w-5" />
+              {notifications.filter((notification) => !readNotifications.includes(notification.id)).length > 0 && <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">{Math.min(99, notifications.filter((notification) => !readNotifications.includes(notification.id)).length)}</span>}
+            </button>
+            {notificationsOpen && <div className="absolute right-0 top-12 z-40 w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-lg border bg-white shadow-xl"><div className="flex items-center justify-between border-b px-4 py-3"><div><h2 className="font-semibold">Notificaciones</h2><p className="text-xs text-gray-500">Eventos para gestionar</p></div><button type="button" onClick={marcarTodasLeidas} className="text-xs text-blue-600 hover:underline">Marcar todas</button></div><div className="max-h-[min(480px,70vh)] overflow-y-auto">{notifications.length === 0 ? <p className="p-5 text-sm text-gray-500">No hay alertas pendientes</p> : notifications.map((notification) => { const leida = readNotifications.includes(notification.id); return <Link key={notification.id} href={notification.href} onClick={() => { marcarLeida(notification.id); setNotificationsOpen(false) }} className={cn("flex gap-3 border-b px-4 py-3 hover:bg-gray-50", leida && "opacity-50")}><div className={cn("mt-0.5 rounded-full p-1.5", notification.prioridad === "alta" ? "bg-red-100 text-red-600" : "bg-blue-100 text-blue-600")}>{notification.prioridad === "alta" ? <AlertTriangle className="h-4 w-4" /> : <CalendarClock className="h-4 w-4" />}</div><div className="min-w-0 flex-1"><p className="text-sm font-medium">{notification.titulo}</p><p className="text-xs text-gray-600">{notification.mensaje}</p><p className="mt-1 text-[11px] text-gray-400">{notification.fecha}</p></div>{leida && <Check className="mt-1 h-4 w-4 text-green-600" />}</Link> })}</div></div>}
+          </div>
           <div className="text-sm text-gray-500">
             {new Date().toLocaleDateString("es-HN", {
               weekday: "long",
@@ -149,7 +204,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             })}
           </div>
         </header>
-        <main className="flex-1 p-4 lg:p-6 overflow-auto">{children}</main>
+        <main className="flex-1 p-4 lg:p-6 overflow-auto">
+          {tieneAccesoRuta ? children : (
+            <p className="text-gray-500">No tienes permisos para ver esta página.</p>
+          )}
+        </main>
       </div>
     </div>
   )

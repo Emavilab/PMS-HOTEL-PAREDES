@@ -17,6 +17,7 @@ export default function NuevaReservaPage() {
   const [guestResults, setGuestResults] = useState<Huesped[]>([])
   const [selectedGuest, setSelectedGuest] = useState<any | null>(null)
   const [roomTypes, setRoomTypes] = useState<TipoHabitacion[]>([])
+  const [metodosPago, setMetodosPago] = useState<any[]>([])
   const [taxRate, setTaxRate] = useState(15)
   const [searching, setSearching] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -35,16 +36,20 @@ export default function NuevaReservaPage() {
     origen: "Walk-in",
     descuento: 0,
     adelanto: 0,
+    metodo_pago: "",
     tiene_vehiculo: false,
     detalle_vehiculo: "",
     solicitudes_especiales: "",
   })
 
   useEffect(() => {
-    Promise.all([api.tiposHabitacion.listar(), api.configuracion.obtener()])
-      .then(([types, config]) => {
+    Promise.all([api.tiposHabitacion.listar(), api.configuracion.obtener(), api.metodosPago.listar()])
+      .then(([types, config, metodos]) => {
         setRoomTypes(types)
+        const activos = metodos.filter((metodo: any) => metodo.activo)
+        setMetodosPago(activos)
         setTaxRate(Number(config.impuesto) || 0)
+        setForm((f) => ({ ...f, metodo_pago: activos[0]?.nombre || "" }))
       })
       .catch((err: any) => setError(err.message))
     const hoy = new Date().toISOString().split("T")[0]
@@ -165,7 +170,7 @@ export default function NuevaReservaPage() {
       if (adelanto > 0) {
         await api.facturacion.agregarPago(reserva.id, {
           monto: adelanto,
-          metodo_pago: "Efectivo",
+          metodo_pago: form.metodo_pago,
           referencia: `Adelanto de reserva - ${form.fecha_entrada}`,
         })
       }
@@ -178,10 +183,10 @@ export default function NuevaReservaPage() {
     }
   }
 
-  const inputCls = "h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm"
+  const inputCls = "h-9 w-full rounded-md border border-gray-300 bg-white px-3 text-sm"
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="mx-auto max-w-7xl space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Nueva Reserva</h1>
@@ -194,13 +199,13 @@ export default function NuevaReservaPage() {
 
       {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-600">{error}</div>}
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
-        <div className="space-y-6">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="grid gap-4 lg:grid-cols-2">
           <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Huésped</CardTitle>
+            <CardHeader className="p-3 pb-2">
+              <CardTitle className="text-base">Huésped</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3 p-3 pt-0">
               <div className="flex gap-2 rounded-md bg-gray-100 p-1">
                 <button className={`flex-1 rounded-md py-2 text-sm font-medium ${step === "buscar" ? "bg-white text-blue-700 shadow" : "text-gray-600"}`} onClick={() => setStep("buscar")}>Buscar existente</button>
                 <button className={`flex-1 rounded-md py-2 text-sm font-medium ${step === "nuevo" ? "bg-white text-blue-700 shadow" : "text-gray-600"}`} onClick={() => { setStep("nuevo"); setSelectedGuest(null) }}>Nuevo huésped</button>
@@ -232,10 +237,10 @@ export default function NuevaReservaPage() {
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Datos de la reserva</CardTitle>
+            <CardHeader className="p-3 pb-2">
+              <CardTitle className="text-base">Datos de la reserva</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3 p-3 pt-0">
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Entrada"><Input type="date" value={form.fecha_entrada} onChange={(e) => setForm({ ...form, fecha_entrada: e.target.value })} /></Field>
                 <Field label="Salida"><Input type="date" value={form.fecha_salida} onChange={(e) => setForm({ ...form, fecha_salida: e.target.value })} /></Field>
@@ -262,19 +267,25 @@ export default function NuevaReservaPage() {
               <VehicleBlock form={form} setForm={setForm} />
 
               <Field label="Solicitudes especiales">
-                <textarea className="min-h-24 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" value={form.solicitudes_especiales} onChange={(e) => setForm({ ...form, solicitudes_especiales: e.target.value })} />
+                <textarea className="min-h-16 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" value={form.solicitudes_especiales} onChange={(e) => setForm({ ...form, solicitudes_especiales: e.target.value })} />
               </Field>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Cobros y adelanto</CardTitle>
+          <Card className="lg:col-span-2">
+            <CardHeader className="p-3 pb-2">
+              <CardTitle className="text-base">Cobros y adelanto</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3 p-3 pt-0">
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Descuento"><Input type="number" min={0} step={0.01} value={form.descuento} onChange={(e) => setForm({ ...form, descuento: parseFloat(e.target.value) || 0 })} /></Field>
                 <Field label="Adelanto pagado"><Input type="number" min={0} step={0.01} value={form.adelanto} onChange={(e) => setForm({ ...form, adelanto: parseFloat(e.target.value) || 0 })} /></Field>
+                <Field label="Método de pago">
+                  <select className={inputCls} value={form.metodo_pago} onChange={(e) => setForm({ ...form, metodo_pago: e.target.value })}>
+                    {form.metodo_pago === "" && <option value="">Configura un método de pago</option>}
+                    {metodosPago.map((metodo) => <option key={metodo.id} value={metodo.nombre}>{metodo.nombre}</option>)}
+                  </select>
+                </Field>
                 <Field label="Cargo extra"><Input placeholder="Descripción" value={extraDesc} onChange={(e) => setExtraDesc(e.target.value)} /></Field>
                 <Field label="Monto extra"><Input type="number" min={0} step={0.01} value={extraMonto} onChange={(e) => setExtraMonto(parseFloat(e.target.value) || 0)} /></Field>
               </div>
@@ -340,10 +351,10 @@ function GuestForm({ form, setForm, inputCls }: { form: any; setForm: (form: any
 
 function VehicleBlock({ form, setForm }: { form: any; setForm: (form: any) => void }) {
   return (
-    <div className="rounded-lg border bg-gray-50 p-3 space-y-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <div className="rounded-lg border bg-gray-50 p-2.5 space-y-2">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-sm font-medium">¿El huésped anda vehículo?</p>
+          <p className="text-xs font-medium">¿El huésped anda vehículo?</p>
           <p className="text-xs text-gray-500">Opcional para control de parqueo.</p>
         </div>
         <div className="flex rounded-md bg-white p-1 text-sm ring-1 ring-gray-200">

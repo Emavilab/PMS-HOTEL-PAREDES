@@ -1,27 +1,74 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { api } from "@/lib/api"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
+import { Dialog } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { formatDate } from "@/lib/utils"
-import { Shield } from "lucide-react"
+import { formatDateTimeMinute } from "@/lib/utils"
+import { Eye, RefreshCw, Search, Shield, X } from "lucide-react"
 import { useAuth } from "@/hooks/useAuth"
 import type { RegistroAuditoria } from "@/types"
+
+function leerSnapshot(valor: string | null): Record<string, unknown> | null {
+  if (!valor) return null
+  try {
+    return JSON.parse(valor) as Record<string, unknown>
+  } catch {
+    return { valor }
+  }
+}
 
 export default function AuditoriaPage() {
   const { user: currentUser } = useAuth()
   const [logs, setLogs] = useState<RegistroAuditoria[]>([])
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
-  const [entityFilter, setEntityFilter] = useState("")
+  const [error, setError] = useState("")
+  const [search, setSearch] = useState("")
+  const [action, setAction] = useState("")
+  const [entity, setEntity] = useState("")
+  const [from, setFrom] = useState("")
+  const [to, setTo] = useState("")
+  const [selected, setSelected] = useState<RegistroAuditoria | null>(null)
+  const [page, setPage] = useState(1)
+
+  const loadLogs = () => {
+    setLoading(true)
+    setError("")
+    const params: Record<string, string> = { tamano: "50", pagina: String(page) }
+    if (search.trim()) params.buscar = search.trim()
+    if (action) params.accion = action
+    if (entity) params.tipo_entidad = entity
+    if (from) params.desde = from
+    if (to) params.hasta = to
+    api.auditoria.listar(params).then((data) => { setLogs(data.items); setTotal(data.total) }).catch((err: Error) => setError(err.message)).finally(() => setLoading(false))
+  }
+
+  const exportLogs = (format: "xlsx" | "pdf") => {
+    const params: Record<string, string> = {}
+    if (search.trim()) params.buscar = search.trim()
+    if (action) params.accion = action
+    if (entity) params.tipo_entidad = entity
+    if (from) params.desde = from
+    if (to) params.hasta = to
+    api.auditoria.exportar(params, format).then((blob) => {
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement("a")
+      anchor.href = url
+      const fecha = new Date().toISOString().slice(0, 10)
+      anchor.download = `auditoria_${fecha}.${format}`
+      anchor.click()
+      URL.revokeObjectURL(url)
+    }).catch((err: Error) => setError(err.message))
+  }
 
   useEffect(() => {
-    api.auditoria.listar({ limit: "200" }).then(setLogs).finally(() => setLoading(false))
-  }, [])
+    loadLogs()
+  }, [action, entity, from, to, page])
 
-  const filtered = entityFilter
-    ? logs.filter((l) => l.tipo_entidad.includes(entityFilter))
-    : logs
+  const actions = useMemo(() => Array.from(new Set(logs.map((log) => log.accion))).sort(), [logs])
+  const entities = useMemo(() => Array.from(new Set(logs.map((log) => log.tipo_entidad))).sort(), [logs])
 
   if (currentUser?.rol !== "admin" && currentUser?.rol !== "gerente") {
     return <p className="text-gray-500">No tienes permisos para ver esta página.</p>
@@ -29,55 +76,33 @@ export default function AuditoriaPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold flex items-center gap-2">
-        <Shield className="h-6 w-6" /> Auditoría
-      </h1>
-
-      <div className="flex gap-4">
-        <Input
-          placeholder="Filtrar por entidad (reserva, huesped, habitacion...)"
-          value={entityFilter}
-          onChange={(e) => setEntityFilter(e.target.value)}
-          className="max-w-sm"
-        />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold flex items-center gap-2"><Shield className="h-6 w-6" /> Auditoría</h1>
+        <div className="flex gap-2"><button type="button" onClick={() => exportLogs("xlsx")} className="rounded-md border px-3 py-2 text-sm hover:bg-gray-50">Excel</button><button type="button" onClick={() => exportLogs("pdf")} className="rounded-md border px-3 py-2 text-sm hover:bg-gray-50">PDF</button><button type="button" onClick={loadLogs} disabled={loading} className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50" title="Actualizar registros"><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Actualizar</button></div>
       </div>
 
       <Card>
-        <CardContent className="p-0">
-          {loading ? (
-            <p className="p-6 text-gray-500">Cargando...</p>
-          ) : filtered.length === 0 ? (
-            <p className="p-6 text-gray-500">No hay registros de auditoría</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-gray-50">
-                    <th className="text-left p-3">Fecha</th>
-                    <th className="text-left p-3">Usuario</th>
-                    <th className="text-left p-3">Acción</th>
-                    <th className="text-left p-3">Entidad</th>
-                    <th className="text-left p-3">ID</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((log) => (
-                    <tr key={log.id} className="border-b hover:bg-gray-50">
-                      <td className="p-3">{formatDate(log.creado_en)}</td>
-                      <td className="p-3">{log.nombre_usuario || "-"}</td>
-                      <td className="p-3">
-                        <span className="px-2 py-0.5 bg-gray-100 rounded text-xs font-medium">{log.accion}</span>
-                      </td>
-                      <td className="p-3">{log.tipo_entidad}</td>
-                      <td className="p-3 text-gray-500">{log.entidad_id ? log.entidad_id.substring(0, 8) + "..." : "-"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+        <CardContent className="flex flex-wrap items-end gap-3 p-4">
+          <div className="min-w-[240px] flex-1"><label className="mb-1 block text-xs font-medium text-gray-500">Buscar</label><div className="relative"><Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" /><Input className="pl-9" placeholder="Usuario, acción, entidad o ID" value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === "Enter" && loadLogs()} /></div></div>
+          <label className="text-sm text-gray-600">Acción<select value={action} onChange={(e) => setAction(e.target.value)} className="mt-1 block h-10 rounded-md border px-3 text-sm"><option value="">Todas</option>{actions.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+          <label className="text-sm text-gray-600">Entidad<select value={entity} onChange={(e) => setEntity(e.target.value)} className="mt-1 block h-10 rounded-md border px-3 text-sm"><option value="">Todas</option>{entities.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+          <label className="text-sm text-gray-600">Desde<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="mt-1 block h-10 rounded-md border px-3 text-sm" /></label>
+          <label className="text-sm text-gray-600">Hasta<input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="mt-1 block h-10 rounded-md border px-3 text-sm" /></label>
+          <button type="button" onClick={() => { setSearch(""); setAction(""); setEntity(""); setFrom(""); setTo(""); setPage(1) }} className="inline-flex h-10 items-center gap-2 rounded-md px-3 text-sm text-gray-600 hover:bg-gray-100" title="Limpiar filtros"><X className="h-4 w-4" /> Limpiar</button>
         </CardContent>
       </Card>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-gray-500"><span>{loading ? "Cargando registros..." : `${total} registros encontrados`}</span>{!loading && total > 50 && <div className="flex items-center gap-2"><button type="button" disabled={page === 1} onClick={() => setPage((current) => current - 1)} className="rounded border px-3 py-1 disabled:opacity-40">Anterior</button><span>Página {page} de {Math.ceil(total / 50)}</span><button type="button" disabled={page >= Math.ceil(total / 50)} onClick={() => setPage((current) => current + 1)} className="rounded border px-3 py-1 disabled:opacity-40">Siguiente</button></div>}</div>
+      {error && <p className="rounded-md bg-red-50 p-4 text-sm text-red-700">{error}</p>}
+      <Card>
+        <CardContent className="p-0">
+              {!loading && !error && logs.length === 0 ? <p className="p-6 text-gray-500">No hay registros de auditoría</p> : <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-gray-50"><th className="p-3 text-left">Fecha</th><th className="p-3 text-left">Usuario</th><th className="p-3 text-left">Acción</th><th className="p-3 text-left">Entidad</th><th className="p-3 text-left">ID</th><th className="p-3 text-right">Detalle</th></tr></thead><tbody>{logs.map((log) => <tr key={log.id} className="border-b hover:bg-gray-50"><td className="p-3 whitespace-nowrap">{formatDateTimeMinute(log.creado_en)}</td><td className="p-3">{log.nombre_usuario || "Sistema"}</td><td className="p-3"><span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium">{log.accion}</span></td><td className="p-3">{log.tipo_entidad}</td><td className="p-3 font-mono text-xs text-gray-500">{log.entidad_id ? `${log.entidad_id.substring(0, 8)}...` : "-"}</td><td className="p-3 text-right"><button type="button" onClick={() => setSelected(log)} className="rounded p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900" title="Ver cambios"><Eye className="h-4 w-4" /></button></td></tr>)}</tbody></table></div>}
+        </CardContent>
+      </Card>
+
+      <Dialog open={Boolean(selected)} onClose={() => setSelected(null)} title="Detalle de auditoría" className="max-w-2xl">
+        {selected && <div className="space-y-4 text-sm"><div className="grid grid-cols-2 gap-3"><div><span className="text-gray-500">Usuario</span><p>{selected.nombre_usuario || "Sistema"}</p></div><div><span className="text-gray-500">IP</span><p>{selected.direccion_ip || "No disponible"}</p></div><div><span className="text-gray-500">Acción</span><p>{selected.accion}</p></div><div><span className="text-gray-500">Entidad</span><p>{selected.tipo_entidad} {selected.entidad_id ? `(${selected.entidad_id})` : ""}</p></div></div><div className="grid gap-4 md:grid-cols-2"><div><h3 className="mb-2 font-medium">Valores anteriores</h3><pre className="max-h-72 overflow-auto rounded bg-gray-50 p-3 text-xs">{JSON.stringify(leerSnapshot(selected.valores_anteriores), null, 2) || "Sin datos"}</pre></div><div><h3 className="mb-2 font-medium">Valores nuevos</h3><pre className="max-h-72 overflow-auto rounded bg-gray-50 p-3 text-xs">{JSON.stringify(leerSnapshot(selected.valores_nuevos), null, 2) || "Sin datos"}</pre></div></div></div>}
+      </Dialog>
     </div>
   )
 }
