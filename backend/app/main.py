@@ -67,6 +67,23 @@ def on_startup():
     agregar_columnas_reserva_si_faltan()
     migrar_pisos_habitaciones()
     migrar_categorias_productos()
+    agregar_columnas_auditoria()
+
+
+def agregar_columnas_auditoria():
+    columnas = {col["name"] for col in inspect(engine).get_columns("registros_auditoria")}
+    nuevas = {
+        "nombre_usuario": "VARCHAR(255)",
+        "rol_usuario": "VARCHAR(50)",
+        "metodo_http": "VARCHAR(10)",
+        "ruta": "VARCHAR(500)",
+        "estado_http": "INTEGER",
+        "agente_usuario": "VARCHAR(500)",
+    }
+    with engine.begin() as conn:
+        for nombre, tipo in nuevas.items():
+            if nombre not in columnas:
+                conn.execute(text(f"ALTER TABLE registros_auditoria ADD COLUMN {nombre} {tipo}"))
 
 
 def agregar_columnas_reserva_si_faltan():
@@ -111,6 +128,9 @@ def agregar_columnas_reserva_si_faltan():
     if "permisos" not in columnas_usuarios:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE usuarios ADD COLUMN permisos TEXT DEFAULT '[]'"))
+    if "ultima_actividad" not in columnas_usuarios:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE usuarios ADD COLUMN ultima_actividad DATETIME"))
 
     columnas_limpieza = {col["name"] for col in inspect(engine).get_columns("tareas_limpieza")}
     if "tipo_limpieza" not in columnas_limpieza:

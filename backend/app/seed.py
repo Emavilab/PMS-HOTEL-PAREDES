@@ -1,6 +1,6 @@
 import uuid
 from datetime import date, timedelta
-import bcrypt
+from app.core.seguridad import hash_password
 from app.core.database import SessionLocal, engine, Base
 from app.modules.usuarios.modelos import Usuario
 from app.modules.auditoria.modelos import RegistroAuditoria
@@ -13,10 +13,6 @@ from app.modules.limpieza.modelos import TareaLimpieza
 from app.modules.caja.modelos import SesionCaja
 from app.modules.configuracion.modelos import HotelConfig
 from app.modules.ventas.modelos import Consumo
-
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-
 
 def seed():
     Base.metadata.create_all(bind=engine)
@@ -31,7 +27,7 @@ def seed():
         id=str(uuid.uuid4()),
         usuario="admin",
         email="admin@hotel.com",
-        contrasena=hash_password("admin123"),
+        contrasena=hash_password("AdminHotel2026!"),
         nombre_completo="Administrador",
         rol="admin",
         estado="activo",
@@ -41,7 +37,7 @@ def seed():
         id=str(uuid.uuid4()),
         usuario="gerente",
         email="gerente@hotel.com",
-        contrasena=hash_password("gerente123"),
+        contrasena=hash_password("GerenteHotel2026!"),
         nombre_completo="Gerente General",
         rol="gerente",
         estado="activo",
@@ -50,7 +46,7 @@ def seed():
         id=str(uuid.uuid4()),
         usuario="recepcion",
         email="recepcion@hotel.com",
-        contrasena=hash_password("recepcion123"),
+        contrasena=hash_password("RecepcionHotel2026!"),
         nombre_completo="Recepcionista",
         rol="recepcionista",
         estado="activo",
@@ -186,9 +182,7 @@ def seed():
     db.commit()
     db.close()
     print("Base de datos creada exitosamente!")
-    print(f"Admin: admin@hotel.com / admin123")
-    print(f"Gerente: gerente@hotel.com / gerente123")
-    print(f"Recepción: recepcion@hotel.com / recepcion123")
+    print("Credenciales iniciales: consulta README.md y cambia estas contraseñas al ingresar.")
 
 
 if __name__ == "__main__":
