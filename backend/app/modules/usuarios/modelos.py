@@ -19,6 +19,7 @@ class Usuario(Base):
     es_superadmin: Mapped[bool] = mapped_column(Boolean, default=False)
     permisos: Mapped[str] = mapped_column(Text, nullable=True, default="[]")
     ultimo_acceso: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    ultima_actividad: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     creado_en: Mapped[datetime] = mapped_column(
         "created_at", DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

@@ -29,15 +29,19 @@ MODULOS_KEYS = [m["key"] for m in MODULOS_SISTEMA]
 
 
 def validar_longitud_contrasena(valor: str) -> str:
-    if len(valor.encode("utf-8")) > 72:
-        raise ValueError("La contrasena no puede superar 72 bytes")
+    if len(valor) < 12:
+        raise ValueError("La contraseña debe tener al menos 12 caracteres")
+    if len(valor.encode("utf-8")) > 256:
+        raise ValueError("La contraseña no puede superar 256 bytes")
+    if valor.strip() != valor or not any(caracter.isalpha() for caracter in valor) or not any(caracter.isdigit() for caracter in valor):
+        raise ValueError("La contraseña debe incluir letras y números, sin espacios al inicio o al final")
     return valor
 
 
 class UsuarioCrear(BaseModel):
     usuario: str = Field(min_length=3, max_length=100)
     email: EmailStr
-    contrasena: str = Field(min_length=6)
+    contrasena: str = Field(min_length=12, max_length=256)
     nombre_completo: str = Field(min_length=3, max_length=255)
     telefono: Optional[str] = Field(default=None, max_length=50)
     rol: str = "recepcionista"
@@ -83,7 +87,7 @@ class UsuarioCrear(BaseModel):
 class UsuarioActualizar(BaseModel):
     usuario: Optional[str] = Field(default=None, min_length=3, max_length=100)
     email: Optional[EmailStr] = None
-    contrasena: Optional[str] = Field(default=None, min_length=6)
+    contrasena: Optional[str] = Field(default=None, min_length=12, max_length=256)
     nombre_completo: Optional[str] = Field(default=None, min_length=3, max_length=255)
     telefono: Optional[str] = Field(default=None, max_length=50)
     rol: Optional[str] = None
