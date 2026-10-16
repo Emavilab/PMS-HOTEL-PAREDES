@@ -16,6 +16,12 @@ class RegistroAuditoria(Base):
     valores_anteriores: Mapped[str] = mapped_column(Text, nullable=True)
     valores_nuevos: Mapped[str] = mapped_column(Text, nullable=True)
     direccion_ip: Mapped[str] = mapped_column(String(50), nullable=True)
+    nombre_usuario: Mapped[str] = mapped_column(String(255), nullable=True)
+    rol_usuario: Mapped[str] = mapped_column(String(50), nullable=True)
+    metodo_http: Mapped[str] = mapped_column(String(10), nullable=True)
+    ruta: Mapped[str] = mapped_column(String(500), nullable=True)
+    estado_http: Mapped[int] = mapped_column(nullable=True)
+    agente_usuario: Mapped[str] = mapped_column(String(500), nullable=True)
     creado_en: Mapped[datetime] = mapped_column(
         "created_at", DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
