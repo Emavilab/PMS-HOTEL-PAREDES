@@ -3,12 +3,12 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
-import bcrypt
 
 from app.core.database import get_db
-from app.core.seguridad import crear_token_acceso
+from app.core.seguridad import crear_token_acceso, verificar_password, hash_password
 from app.common.auditoria import crear_registro_auditoria
 from app.modules.auth.esquemas import LoginRequest, TokenResponse, VerifyTokenRequest
+from app.core.seguridad import obtener_usuario_actual
 from app.modules.usuarios.modelos import Usuario
 from app.modules.usuarios.esquemas import UsuarioResponse
 
@@ -27,17 +27,9 @@ def login(datos: LoginRequest, request: Request, db: Session = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciales invalidas",
         )
-    try:
-        # Use bcrypt.checkpw directly to avoid passlib backend detection issues
-        if not bcrypt.checkpw(datos.contrasena.encode("utf-8"), usuario.contrasena.encode("utf-8")):
-            crear_registro_auditoria(db, usuario.id, "LOGIN_FALLIDO", "USUARIO", usuario.id, None, {"motivo": "contrasena_incorrecta"}, request.client.host if request.client else None)
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Credenciales invalidas",
-            )
-    except ValueError as e:
-        # bcrypt may raise ValueError for invalid inputs; return a clear 400 error
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    if not verificar_password(datos.contrasena, usuario.contrasena):
+        crear_registro_auditoria(db, usuario.id, "LOGIN_FALLIDO", "USUARIO", usuario.id, None, {"motivo": "contrasena_incorrecta"}, request.client.host if request.client else None)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales invalidas")
     if usuario.estado != "activo":
         crear_registro_auditoria(db, usuario.id, "LOGIN_FALLIDO", "USUARIO", usuario.id, None, {"motivo": "usuario_inactivo"}, request.client.host if request.client else None)
         raise HTTPException(
@@ -46,6 +38,9 @@ def login(datos: LoginRequest, request: Request, db: Session = Depends(get_db)):
         )
 
     token = crear_token_acceso(data={"sub": usuario.id, "rol": usuario.rol})
+
+    if usuario.contrasena.startswith(("$2a$", "$2b$", "$2y$")):
+        usuario.contrasena = hash_password(datos.contrasena)
 
     usuario.ultimo_acceso = datetime.now(timezone.utc)
     db.commit()
@@ -80,3 +75,16 @@ def verify_token(datos: VerifyTokenRequest, db: Session = Depends(get_db)):
             detail="Usuario no encontrado o inactivo",
         )
     return UsuarioResponse.model_validate(usuario)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(request: Request, usuario_actual: Usuario = Depends(obtener_usuario_actual), db: Session = Depends(get_db)):
+    crear_registro_auditoria(
+        db=db,
+        usuario_id=usuario_actual.id,
+        accion="LOGOUT",
+        tipo_entidad="USUARIO",
+        entidad_id=usuario_actual.id,
+        valores_nuevos={"resultado": "sesion_cerrada"},
+        direccion_ip=request.client.host if request.client else None,
+    )
