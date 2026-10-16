@@ -21,6 +21,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   const logout = useCallback(() => {
+    if (localStorage.getItem("token") || sessionStorage.getItem("token")) {
+      api.auth.logout().catch(() => undefined)
+    }
     setUser(null)
     setToken(null)
     localStorage.removeItem("token")

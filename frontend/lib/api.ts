@@ -2,7 +2,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
 function obtenerToken(): string | null {
   if (typeof window !== "undefined") {
-    return localStorage.getItem("token")
+    return localStorage.getItem("token") || sessionStorage.getItem("token")
   }
   return null
 }
@@ -53,9 +53,12 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ token }),
       }),
+    logout: () => peticion<void>("/auth/logout", { method: "POST" }),
   },
   usuarios: {
     listar: () => peticion<any[]>("/usuarios"),
+    activos: () => peticion<{ id: string; usuario: string; nombre_completo: string; rol: string; ultima_actividad: string }[]>("/usuarios/activos"),
+    registrarActividad: () => peticion<void>("/usuarios/actividad", { method: "POST" }),
     crear: (datos: any) =>
       peticion<any>("/usuarios", { method: "POST", body: JSON.stringify(datos) }),
     actualizar: (id: string, datos: any) =>
@@ -210,7 +213,7 @@ export const api = {
     ingresos: (fechaInicio: string, fechaFin: string) =>
       peticion<any>(`/reportes/ingresos?desde=${fechaInicio}&hasta=${fechaFin}`),
     llegadas: () => peticion<any[]>("/reportes/llegadas"),
-    salidas: () => peticion<any[]>("/reportes/salidas"),
+    salidas: (dias?: number) => peticion<any[]>(`/reportes/salidas${dias ? `?dias=${dias}` : ""}`),
     cuentasPorCobrar: (hasta?: string) =>
       peticion<any>(`/reportes/cuentas-por-cobrar${hasta ? `?hasta=${hasta}` : ""}`),
     housekeeping: (fecha?: string) =>

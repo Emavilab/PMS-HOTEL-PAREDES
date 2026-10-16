@@ -19,9 +19,16 @@ export interface RegistroAuditoria {
   entidad_id: string | null
   usuario_id: string | null
   nombre_usuario: string | null
+  rol_usuario?: string | null
   valores_anteriores: string | null
   valores_nuevos: string | null
   direccion_ip: string | null
+  metodo_http?: string | null
+  ruta?: string | null
+  estado_http?: number | null
+  agente_usuario?: string | null
+  descripcion?: string
+  detalles?: Record<string, unknown>
   creado_en: string
 }
 
