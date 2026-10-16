@@ -8,6 +8,7 @@ import { api } from "@/lib/api"
 import { Calendar, Users, BedDouble, DollarSign, ArrowRight, RefreshCw } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from "@/hooks/useAuth"
+import { ErrorToast } from "@/components/ui/error-toast"
 
 type OperacionDia = {
   id: string
@@ -82,7 +83,7 @@ export default function DashboardPage() {
         })}
       </div>
 
-      {error && <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700"><span>{error}</span><button type="button" onClick={() => window.location.reload()} className="inline-flex items-center gap-2 rounded border border-red-200 bg-white px-3 py-1.5 hover:bg-red-100"><RefreshCw className="h-4 w-4" /> Reintentar</button></div>}
+      <ErrorToast message={error} onClose={() => setError("")} />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Link href="/recepcion" className="flex items-center justify-between rounded-md border bg-white p-4 text-sm font-medium hover:border-blue-300 hover:bg-blue-50"><span>Ir a recepción</span><ArrowRight className="h-4 w-4" /></Link>

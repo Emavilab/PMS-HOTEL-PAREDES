@@ -135,7 +135,7 @@ export default function HousekeepingPage() {
 
       {/* Error */}
       {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-600 flex items-center justify-between">
+        <div className="instant-error rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-600 flex items-center justify-between">
           <span>{error}</span>
           <button onClick={() => setError("")} className="text-red-400 hover:text-red-600">
             <XCircle className="h-4 w-4" />
@@ -500,7 +500,7 @@ function CreateTaskModal({
     <Dialog open onClose={onClose} title="Crear Tarea de Limpieza" className="max-w-md">
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-600">{error}</div>
+          <div className="instant-error rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-600">{error}</div>
         )}
 
         {/* Room Selection */}

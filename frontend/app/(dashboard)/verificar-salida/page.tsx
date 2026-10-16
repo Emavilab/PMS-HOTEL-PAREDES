@@ -6,8 +6,26 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge, statusBadge } from "@/components/ui/badge"
 import { formatCurrency } from "@/lib/utils"
+import { ErrorToast } from "@/components/ui/error-toast"
+import { Input } from "@/components/ui/input"
+import { CalendarDays, Clock3, LogOut, RefreshCw, Search } from "lucide-react"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+
+function localDateString(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+function formatDepartureDate(date: string) {
+  if (!date) return "Fecha pendiente"
+  const [year, month, day] = date.split("-").map(Number)
+  return new Date(year, month - 1, day).toLocaleDateString("es-HN", {
+    weekday: "long", day: "numeric", month: "long", year: "numeric",
+  })
+}
 
 export default function VerificarSalidaPage() {
   const [ocupadas, setOcupadas] = useState<any[]>([])
@@ -23,6 +41,30 @@ export default function VerificarSalidaPage() {
   const [culminando, setCulminando] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
+  const [search, setSearch] = useState("")
+  const [activePeriod, setActivePeriod] = useState<"hoy" | "manana" | "proximas">("hoy")
+
+  const today = localDateString(new Date())
+  const tomorrowDate = new Date()
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1)
+  const tomorrow = localDateString(tomorrowDate)
+  const normalizedSearch = search.trim().toLocaleLowerCase("es")
+  const filteredOcupadas = ocupadas.filter((h) =>
+    [h.huesped, h.habitacion_numero, h.codigo_confirmacion, h.habitacion_tipo]
+      .some((value) => String(value || "").toLocaleLowerCase("es").includes(normalizedSearch)),
+  )
+  const periods = {
+    hoy: filteredOcupadas.filter((h) => h.fecha_salida <= today),
+    manana: filteredOcupadas.filter((h) => h.fecha_salida === tomorrow),
+    proximas: filteredOcupadas.filter((h) => h.fecha_salida > tomorrow),
+  }
+  const periodLabels = { hoy: "Hoy", manana: "Mañana", proximas: "Próximas" }
+
+  useEffect(() => {
+    if (!success) return
+    const timer = window.setTimeout(() => setSuccess(""), 3200)
+    return () => window.clearTimeout(timer)
+  }, [success])
 
   const loadData = useCallback(() => {
     setLoading(true)
@@ -83,40 +125,79 @@ export default function VerificarSalidaPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Verificar Salida</h1>
+      <div className="flex flex-col gap-4 rounded-xl bg-gradient-to-r from-slate-900 to-blue-900 p-5 text-white sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-blue-100">
+            <LogOut className="h-3.5 w-3.5" /> Control de checkout
+          </div>
+          <h1 className="text-2xl font-bold">Verificar Salida</h1>
+          <p className="mt-1 text-sm text-blue-100">Revisa las estadías por fecha y liquida la cuenta del huésped.</p>
+        </div>
+        <div className="flex items-center gap-3 rounded-lg bg-white/10 px-4 py-3">
+          <CalendarDays className="h-5 w-5 text-blue-100" />
+          <div><p className="text-2xl font-bold">{loading ? "—" : ocupadas.length}</p><p className="text-xs text-blue-100">huéspedes alojados</p></div>
+        </div>
+      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <ErrorToast message={error} onClose={() => setError("")} />
+      {success && <div className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-700">{success}</div>}
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.95fr)]">
         <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Habitaciones Ocupadas</CardTitle>
+          <CardHeader className="space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div><CardTitle className="text-lg">Huéspedes por salir</CardTitle><p className="mt-1 text-sm text-gray-500">Selecciona una estadía para verificar su cuenta.</p></div>
+              <Button variant="outline" size="sm" onClick={loadData} disabled={loading} title="Actualizar lista">
+                <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />Actualizar
+              </Button>
+            </div>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <Input className="pl-9" placeholder="Buscar huésped, habitación o código" value={search} onChange={(event) => setSearch(event.target.value)} />
+            </div>
+            <div className="grid grid-cols-3 gap-2 rounded-lg bg-gray-100 p-1">
+              {(["hoy", "manana", "proximas"] as const).map((period) => (
+                <button key={period} type="button" onClick={() => setActivePeriod(period)} className={`rounded-md px-2 py-2 text-sm font-medium transition-colors ${activePeriod === period ? "bg-white text-blue-700 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}>
+                  {periodLabels[period]} <span className={`ml-1 rounded-full px-1.5 py-0.5 text-xs ${activePeriod === period ? "bg-blue-50 text-blue-700" : "bg-gray-200 text-gray-600"}`}>{periods[period].length}</span>
+                </button>
+              ))}
+            </div>
           </CardHeader>
           <CardContent>
             {loading ? (
               <p className="text-gray-500">Cargando...</p>
             ) : ocupadas.length === 0 ? (
-              <p className="text-gray-500">No hay huéspedes en checkout</p>
+              <div className="rounded-lg border border-dashed p-8 text-center"><Clock3 className="mx-auto mb-2 h-7 w-7 text-gray-400" /><p className="font-medium text-gray-700">No hay huéspedes alojados</p><p className="mt-1 text-sm text-gray-500">Las estadías activas aparecerán aquí.</p></div>
             ) : (
-              <div className="space-y-2">
-                {ocupadas.map((h) => (
+              periods[activePeriod].length === 0 ? (
+                <div className="rounded-lg border border-dashed p-8 text-center text-sm text-gray-500">
+                  {normalizedSearch ? "No se encontraron huéspedes para esta búsqueda." : `No hay salidas para ${periodLabels[activePeriod].toLocaleLowerCase("es")}.`}
+                </div>
+              ) : (
+              <div className="space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{periodLabels[activePeriod]} · {activePeriod === "hoy" ? "Vencidas y de hoy" : activePeriod === "manana" ? formatDepartureDate(tomorrow) : "Después de mañana"}</p>
+                {periods[activePeriod].map((h) => (
                   <div
                     key={h.reserva_id}
                     className={`p-3 rounded-md cursor-pointer ${
                       selected?.reserva_id === h.reserva_id
-                        ? "bg-blue-100 border border-blue-300"
-                        : "bg-gray-50 hover:bg-gray-100 border border-transparent"
+                      ? "border-blue-300 bg-blue-50 ring-1 ring-blue-100"
+                        : "border-gray-200 bg-white hover:border-blue-200 hover:bg-blue-50/50"
                     }`}
                     onClick={() => selectReserva(h)}
                   >
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="font-medium">Hab. {h.habitacion_numero}</p>
-                        <p className="text-sm text-gray-500">{h.huesped}</p>
+                        <p className="font-medium">Hab. {h.habitacion_numero} <span className="font-normal text-gray-500">· {h.habitacion_tipo || "Habitación"}</span></p>
+                        <p className="text-sm text-gray-700">{h.huesped}</p>
+                        <p className="mt-1 text-xs text-gray-500">{formatDepartureDate(h.fecha_salida)} · Código {h.codigo_confirmacion}</p>
                       </div>
-                      <Badge {...statusBadge("CHECKED_IN")} />
+                      <div className="flex flex-col items-end gap-1"><Badge {...statusBadge("CHECKED_IN")} /><span className={`text-xs font-medium ${h.fecha_salida < today ? "text-red-600" : "text-gray-500"}`}>{h.fecha_salida < today ? "Salida vencida" : "Salida programada"}</span></div>
                     </div>
                   </div>
                 ))}
               </div>
+              )
             )}
           </CardContent>
         </Card>
@@ -134,7 +215,7 @@ export default function VerificarSalidaPage() {
               <p className="text-sm text-red-500">Error al cargar datos</p>
             ) : (
               <div className="space-y-4">
-                {error && <div className="p-3 text-sm bg-red-50 text-red-600 rounded-md border border-red-200">{error}</div>}
+                <ErrorToast message={error} onClose={() => setError("")} />
                 {success && <div className="p-3 text-sm bg-green-50 text-green-600 rounded-md border border-green-200">{success}</div>}
 
                 <div className="bg-gray-50 p-3 rounded-md space-y-1 text-sm">

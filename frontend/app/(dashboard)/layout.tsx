@@ -63,6 +63,35 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [notificationsOpen, setNotificationsOpen] = useState(false)
 
   useEffect(() => {
+    if (!isAuthenticated) return
+
+    const tiempoMaximoInactividad = 1 * 60 * 1000
+    let temporizador: number
+    let cerrado = false
+
+    const cerrarPorInactividad = () => {
+      if (cerrado) return
+      cerrado = true
+      logout()
+      router.replace("/login?motivo=inactividad")
+    }
+
+    const reiniciarTemporizador = () => {
+      window.clearTimeout(temporizador)
+      temporizador = window.setTimeout(cerrarPorInactividad, tiempoMaximoInactividad)
+    }
+
+    const eventosActividad: (keyof WindowEventMap)[] = ["pointerdown", "pointermove", "keydown", "scroll", "touchstart", "click"]
+    eventosActividad.forEach((evento) => window.addEventListener(evento, reiniciarTemporizador, { passive: true }))
+    reiniciarTemporizador()
+
+    return () => {
+      window.clearTimeout(temporizador)
+      eventosActividad.forEach((evento) => window.removeEventListener(evento, reiniciarTemporizador))
+    }
+  }, [isAuthenticated, logout, router])
+
+  useEffect(() => {
     if (!loading && !isAuthenticated) {
       router.push("/login")
     }
@@ -78,6 +107,32 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }, 120000)
     return () => window.clearInterval(interval)
   }, [isAuthenticated])
+
+  useEffect(() => {
+    if (!isAuthenticated || !user) return
+    let ultimoEnvio = 0
+    let ultimoMovimiento = 0
+    const registrar = () => {
+      const ahora = Date.now()
+      if (document.visibilityState !== "visible" || ahora - ultimoMovimiento < 25000 || ahora - ultimoEnvio < 20000) return
+      ultimoMovimiento = ahora
+      ultimoEnvio = ahora
+      api.usuarios.registrarActividad().catch(() => undefined)
+    }
+    registrar()
+    window.addEventListener("focus", registrar)
+    window.addEventListener("pointerdown", registrar, { passive: true })
+    window.addEventListener("keydown", registrar)
+    window.addEventListener("scroll", registrar, { passive: true })
+    window.addEventListener("touchstart", registrar, { passive: true })
+    return () => {
+      window.removeEventListener("focus", registrar)
+      window.removeEventListener("pointerdown", registrar)
+      window.removeEventListener("keydown", registrar)
+      window.removeEventListener("scroll", registrar)
+      window.removeEventListener("touchstart", registrar)
+    }
+  }, [isAuthenticated, user?.id])
 
   function marcarLeida(id: string) {
     const next = Array.from(new Set([...readNotifications, id]))
@@ -104,26 +159,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const permisos = Array.isArray(user.permisos) ? user.permisos : []
   const filteredItems = navItems.filter((item) => {
     if (!item.roles.includes(user.rol as any)) return false
-    if (user.rol === "admin" || permisos.length === 0) return true
+    if (user.rol === "admin") return true
     const modulo = moduloDesdeRuta(item.href)
-    return permisos.includes(modulo)
+    return permisos.length === 0 || permisos.includes(modulo)
   })
 
-  const tieneAccesoRuta =
-    user.rol === "admin" ||
-    permisos.length === 0 ||
-    permisos.includes(moduloDesdeRuta(pathname))
+  const itemRuta = navItems.find((item) => item.href === pathname || (item.href !== "/" && pathname.startsWith(`${item.href}/`)))
+  const tieneRolRuta = !itemRuta || itemRuta.roles.includes(user.rol as any)
+  const tienePermisoRuta = user.rol === "admin" || permisos.length === 0 || permisos.includes(moduloDesdeRuta(pathname))
+  const tieneAccesoRuta = tieneRolRuta && tienePermisoRuta
 
   function handleLogout() {
     logout()
-    router.push("/login")
+    router.replace("/login")
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex">
+    <div className="h-screen overflow-hidden bg-gray-100 flex">
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-30 w-64 bg-white border-r transform transition-transform duration-200 ease-in-out lg:relative lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-30 flex h-screen w-64 flex-col overflow-y-auto bg-white border-r transform transition-transform duration-200 ease-in-out lg:sticky lg:top-0 lg:shrink-0 lg:translate-x-0",
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
@@ -136,7 +191,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <X className="h-5 w-5" />
           </button>
         </div>
-        <nav className="p-4 space-y-1">
+        <nav className="flex-1 p-4 space-y-1">
           {filteredItems.map((item) => {
             const Icon = item.icon
             const isActive = pathname === item.href
@@ -158,7 +213,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             )
           })}
         </nav>
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t">
+        <div className="sticky bottom-0 mt-auto shrink-0 border-t bg-white p-4">
           <div className="flex items-center justify-between">
             <div className="text-sm">
               <p className="font-medium">{user.nombre_completo}</p>
@@ -182,8 +237,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         />
       )}
 
-      <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 bg-white border-b flex items-center px-4 lg:px-6">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <header className="z-10 flex h-16 shrink-0 items-center border-b bg-white px-4 lg:px-6">
           <button onClick={() => setSidebarOpen(true)} className="lg:hidden mr-4">
             <Menu className="h-5 w-5" />
           </button>
@@ -204,7 +259,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             })}
           </div>
         </header>
-        <main className="flex-1 p-4 lg:p-6 overflow-auto">
+        <main className="min-h-0 flex-1 overflow-y-auto p-4 lg:p-6">
           {tieneAccesoRuta ? children : (
             <p className="text-gray-500">No tienes permisos para ver esta página.</p>
           )}

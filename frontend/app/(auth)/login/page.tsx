@@ -27,6 +27,12 @@ export default function LoginPage() {
   const router = useRouter()
 
   useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("motivo") === "inactividad") {
+      setError("Tu sesión se cerró por inactividad. Inicia sesión nuevamente.")
+    }
+  }, [])
+
+  useEffect(() => {
     const savedIdentifier = localStorage.getItem("rememberedIdentifier")
     if (savedIdentifier) {
       setIdentificador(savedIdentifier)
@@ -100,7 +106,7 @@ export default function LoginPage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-5">
             {error && (
-              <div className="flex items-center gap-2 p-3 text-sm bg-red-50 text-red-600 rounded-md border border-red-200">
+              <div className="instant-error flex items-center gap-2 p-3 text-sm bg-red-50 text-red-600 rounded-md border border-red-200">
                 <AlertCircle className="h-4 w-4 shrink-0" />
                 {error}
               </div>

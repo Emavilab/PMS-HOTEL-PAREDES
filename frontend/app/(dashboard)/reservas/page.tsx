@@ -11,6 +11,7 @@ import { Dialog } from "@/components/ui/dialog"
 import { formatCurrency, formatDateShort } from "@/lib/utils"
 import { AlertTriangle, Ban, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, LayoutList, LogIn, Plus, Search, Trash2, UserX } from "lucide-react"
 import type { ReservaLista } from "@/types"
+import { ErrorToast } from "@/components/ui/error-toast"
 
 type VistaReserva = "calendario" | "semana" | "dia" | "agenda"
 
@@ -99,7 +100,7 @@ export default function ReservasPage() {
         <MetricCard label="Valor visible" value={formatCurrency(totalVisible)} muted={`${noIngreso} no ingreso`} />
       </div>
 
-      {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+      <ErrorToast message={error} onClose={() => setPageError("")} />
 
       {finishedCount > 0 && (
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
@@ -406,6 +407,12 @@ function ReservaDetalleDialog({ reserva, onClose, onChanged }: { reserva: Reserv
   const [exito, setExito] = useState("")
 
   useEffect(() => {
+    if (!exito) return
+    const timer = window.setTimeout(() => setExito(""), 3200)
+    return () => window.clearTimeout(timer)
+  }, [exito])
+
+  useEffect(() => {
     if (!reserva) return
 
     setLoading(true)
@@ -627,7 +634,7 @@ function ReservaDetalleDialog({ reserva, onClose, onChanged }: { reserva: Reserv
               <Input value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ej: El huésped no podrá viajar" />
             </div>
           )}
-          {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-600">{error}</div>}
+          {error && <div className="instant-error rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-600">{error}</div>}
           <div className="flex justify-end gap-2 border-t pt-4">
             <Button type="button" variant="outline" onClick={() => setAccion(null)} disabled={saving}>Cancelar</Button>
             <Button type="button" variant={accion === "eliminar" || accion === "cancelar" ? "destructive" : "default"} onClick={ejecutarAccion} disabled={saving}>

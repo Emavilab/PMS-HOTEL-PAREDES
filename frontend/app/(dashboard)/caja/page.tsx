@@ -9,6 +9,7 @@ import { Dialog } from "@/components/ui/dialog"
 import { Badge, statusBadge } from "@/components/ui/badge"
 import { formatCurrency, formatDate, formatDateTime } from "@/lib/utils"
 import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, DollarSign, Printer } from "lucide-react"
+import { ErrorToast } from "@/components/ui/error-toast"
 
 type CorteData = {
   sesion: any
@@ -29,6 +30,12 @@ export default function CajaPage() {
   const [exito, setExito] = useState("")
   const [corte, setCorte] = useState<CorteData | null>(null)
   const [metodosPago, setMetodosPago] = useState<any[]>([])
+
+  useEffect(() => {
+    if (!exito) return
+    const timer = window.setTimeout(() => setExito(""), 3200)
+    return () => window.clearTimeout(timer)
+  }, [exito])
 
   const [filtroEstado, setFiltroEstado] = useState("")
   const [filtroDesde, setFiltroDesde] = useState("")
@@ -164,7 +171,7 @@ export default function CajaPage() {
         )}
       </div>
 
-      {error && <div className="p-3 text-sm bg-red-50 text-red-600 rounded-md border border-red-200">{error}</div>}
+      <ErrorToast message={error} onClose={() => setError("")} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>

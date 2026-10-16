@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Badge, statusBadge } from "@/components/ui/badge"
 import { formatCurrency, formatDateShort } from "@/lib/utils"
 import { Download, FileSpreadsheet, FileText, CreditCard, Users, TrendingUp, Calendar, AlertCircle, BookOpen, Landmark, Calculator, BarChart3, ShoppingCart } from "lucide-react"
+import { ErrorToast } from "@/components/ui/error-toast"
 
 type ReporteActivo = "ocupacion" | "ingresos" | "cuentas-cobrar" | "housekeeping" | "ingresos-detallado" | "forecast" | "libro-huespedes" | "impuestos-turisticos" | "conciliacion-caja" | "ventas" | "ejecutivo"
 
@@ -176,7 +177,7 @@ export default function ReportesPage() {
 
       <p className="text-sm text-gray-500">{REPORTES.find(r => r.key === reporteActivo)?.desc}</p>
 
-      {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-600">{error}</div>}
+      <ErrorToast message={error} onClose={() => setError("")} />
 
       <Card>
         <CardContent className="p-6">

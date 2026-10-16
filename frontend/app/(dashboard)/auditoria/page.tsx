@@ -9,15 +9,7 @@ import { formatDateTimeMinute } from "@/lib/utils"
 import { Eye, RefreshCw, Search, Shield, X } from "lucide-react"
 import { useAuth } from "@/hooks/useAuth"
 import type { RegistroAuditoria } from "@/types"
-
-function leerSnapshot(valor: string | null): Record<string, unknown> | null {
-  if (!valor) return null
-  try {
-    return JSON.parse(valor) as Record<string, unknown>
-  } catch {
-    return { valor }
-  }
-}
+import { ErrorToast } from "@/components/ui/error-toast"
 
 export default function AuditoriaPage() {
   const { user: currentUser } = useAuth()
@@ -93,15 +85,15 @@ export default function AuditoriaPage() {
       </Card>
 
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-gray-500"><span>{loading ? "Cargando registros..." : `${total} registros encontrados`}</span>{!loading && total > 50 && <div className="flex items-center gap-2"><button type="button" disabled={page === 1} onClick={() => setPage((current) => current - 1)} className="rounded border px-3 py-1 disabled:opacity-40">Anterior</button><span>Página {page} de {Math.ceil(total / 50)}</span><button type="button" disabled={page >= Math.ceil(total / 50)} onClick={() => setPage((current) => current + 1)} className="rounded border px-3 py-1 disabled:opacity-40">Siguiente</button></div>}</div>
-      {error && <p className="rounded-md bg-red-50 p-4 text-sm text-red-700">{error}</p>}
+      <ErrorToast message={error} onClose={() => setError("")} />
       <Card>
         <CardContent className="p-0">
-              {!loading && !error && logs.length === 0 ? <p className="p-6 text-gray-500">No hay registros de auditoría</p> : <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-gray-50"><th className="p-3 text-left">Fecha</th><th className="p-3 text-left">Usuario</th><th className="p-3 text-left">Acción</th><th className="p-3 text-left">Entidad</th><th className="p-3 text-left">ID</th><th className="p-3 text-right">Detalle</th></tr></thead><tbody>{logs.map((log) => <tr key={log.id} className="border-b hover:bg-gray-50"><td className="p-3 whitespace-nowrap">{formatDateTimeMinute(log.creado_en)}</td><td className="p-3">{log.nombre_usuario || "Sistema"}</td><td className="p-3"><span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium">{log.accion}</span></td><td className="p-3">{log.tipo_entidad}</td><td className="p-3 font-mono text-xs text-gray-500">{log.entidad_id ? `${log.entidad_id.substring(0, 8)}...` : "-"}</td><td className="p-3 text-right"><button type="button" onClick={() => setSelected(log)} className="rounded p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900" title="Ver cambios"><Eye className="h-4 w-4" /></button></td></tr>)}</tbody></table></div>}
+              {!loading && !error && logs.length === 0 ? <p className="p-6 text-gray-500">No hay acciones registradas</p> : <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-gray-50"><th className="p-3 text-left">Fecha y hora</th><th className="p-3 text-left">Realizada por</th><th className="p-3 text-left">Acción</th><th className="p-3 text-right">Detalles</th></tr></thead><tbody>{logs.map((log) => <tr key={log.id} className="border-b hover:bg-gray-50"><td className="p-3 whitespace-nowrap">{formatDateTimeMinute(log.creado_en)}</td><td className="p-3"><span className="font-medium">{log.nombre_usuario || "Sistema"}</span></td><td className="p-3">{log.descripcion || `${log.nombre_usuario || "Un usuario"} realizó una acción en el sistema`}</td><td className="p-3 text-right">{Object.keys(log.detalles || {}).length > 0 && <button type="button" onClick={() => setSelected(log)} className="rounded p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900" title="Ver detalles"><Eye className="h-4 w-4" /></button>}</td></tr>)}</tbody></table></div>}
         </CardContent>
       </Card>
 
       <Dialog open={Boolean(selected)} onClose={() => setSelected(null)} title="Detalle de auditoría" className="max-w-2xl">
-        {selected && <div className="space-y-4 text-sm"><div className="grid grid-cols-2 gap-3"><div><span className="text-gray-500">Usuario</span><p>{selected.nombre_usuario || "Sistema"}</p></div><div><span className="text-gray-500">IP</span><p>{selected.direccion_ip || "No disponible"}</p></div><div><span className="text-gray-500">Acción</span><p>{selected.accion}</p></div><div><span className="text-gray-500">Entidad</span><p>{selected.tipo_entidad} {selected.entidad_id ? `(${selected.entidad_id})` : ""}</p></div></div><div className="grid gap-4 md:grid-cols-2"><div><h3 className="mb-2 font-medium">Valores anteriores</h3><pre className="max-h-72 overflow-auto rounded bg-gray-50 p-3 text-xs">{JSON.stringify(leerSnapshot(selected.valores_anteriores), null, 2) || "Sin datos"}</pre></div><div><h3 className="mb-2 font-medium">Valores nuevos</h3><pre className="max-h-72 overflow-auto rounded bg-gray-50 p-3 text-xs">{JSON.stringify(leerSnapshot(selected.valores_nuevos), null, 2) || "Sin datos"}</pre></div></div></div>}
+        {selected && <div className="space-y-4 text-sm"><div><span className="text-gray-500">Acción realizada</span><p className="font-medium">{selected.descripcion}</p></div><div className="grid grid-cols-2 gap-3"><div><span className="text-gray-500">Usuario</span><p>{selected.nombre_usuario || "Sistema"}</p></div><div><span className="text-gray-500">Fecha y hora</span><p>{formatDateTimeMinute(selected.creado_en)}</p></div>{selected.rol_usuario && <div><span className="text-gray-500">Cargo en el sistema</span><p>{selected.rol_usuario}</p></div>}{selected.direccion_ip && <div><span className="text-gray-500">Ubicación de conexión (IP)</span><p>{selected.direccion_ip}</p></div>}</div>{Object.keys(selected.detalles || {}).length > 0 && <div><h3 className="mb-2 font-medium">Cambios realizados</h3><dl className="divide-y rounded-md border px-3">{Object.entries(selected.detalles || {}).map(([etiqueta, valor]) => <div key={etiqueta} className="flex justify-between gap-4 py-2"><dt className="text-gray-500">{etiqueta}</dt><dd className="text-right font-medium">{typeof valor === "object" ? JSON.stringify(valor) : String(valor)}</dd></div>)}</dl></div>}</div>}
       </Dialog>
     </div>
   )

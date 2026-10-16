@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatCurrency } from "@/lib/utils"
 import { ArrowLeft, Plus, Search } from "lucide-react"
 import type { Huesped, TipoHabitacion } from "@/types"
+import { ErrorToast } from "@/components/ui/error-toast"
 
 export default function NuevaReservaPage() {
   const router = useRouter()
@@ -197,7 +198,7 @@ export default function NuevaReservaPage() {
         </Button>
       </div>
 
-      {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-600">{error}</div>}
+      <ErrorToast message={error} onClose={() => setError("")} />
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div className="grid gap-4 lg:grid-cols-2">

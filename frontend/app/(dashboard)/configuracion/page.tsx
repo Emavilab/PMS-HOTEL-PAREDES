@@ -7,10 +7,21 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Dialog } from "@/components/ui/dialog"
+import { ConfirmModal } from "@/components/ui/confirm-modal"
+import { ErrorToast } from "@/components/ui/error-toast"
 import type { Piso } from "@/types"
 import { Settings, Upload, Trash2, Save, CreditCard, Pencil, Plus, Layers3, Tags } from "lucide-react"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+
+type ConfirmConfig = {
+  open: boolean
+  title: string
+  message: string
+  confirmLabel: string
+  variant: "default" | "destructive"
+  action: () => Promise<void>
+}
 
 export default function ConfiguracionPage() {
   const { user: currentUser } = useAuth()
@@ -45,7 +56,14 @@ export default function ConfiguracionPage() {
   const [categoriaDialogOpen, setCategoriaDialogOpen] = useState(false)
   const [categoriaEditando, setCategoriaEditando] = useState<any | null>(null)
   const [categoriaForm, setCategoriaForm] = useState({ nombre: "", descripcion: "", activo: true })
+  const [confirm, setConfirm] = useState<ConfirmConfig | null>(null)
   const [seccionActiva, setSeccionActiva] = useState<"hotel" | "pagos" | "pisos" | "categorias">("hotel")
+
+  useEffect(() => {
+    if (!success) return
+    const timer = window.setTimeout(() => setSuccess(""), 3200)
+    return () => window.clearTimeout(timer)
+  }, [success])
 
   useEffect(() => {
     api.configuracion.obtener()
@@ -115,15 +133,23 @@ export default function ConfiguracionPage() {
   }
 
   async function handleEliminarMetodo(metodo: any) {
-    if (!window.confirm(`¿Eliminar el método de pago "${metodo.nombre}"?`)) return
-    setError("")
-    try {
-      await api.metodosPago.eliminar(metodo.id)
-      setMetodosPago((actuales) => actuales.filter((item) => item.id !== metodo.id))
-      setSuccess("Método de pago eliminado")
-    } catch (err: any) {
-      setError(err.message)
-    }
+    setConfirm({
+      open: true,
+      title: "Eliminar método de pago",
+      message: `¿Eliminar el método de pago "${metodo.nombre}"?`,
+      confirmLabel: "Eliminar",
+      variant: "destructive",
+      action: async () => {
+        setError("")
+        try {
+          await api.metodosPago.eliminar(metodo.id)
+          setMetodosPago((actuales) => actuales.filter((item) => item.id !== metodo.id))
+          setSuccess("Método de pago eliminado")
+        } catch (err: any) {
+          setError(err.message)
+        }
+      },
+    })
   }
 
   function abrirPisoDialog(piso?: Piso) {
@@ -167,15 +193,23 @@ export default function ConfiguracionPage() {
   }
 
   async function handleEliminarPiso(piso: Piso) {
-    if (!window.confirm(`¿Eliminar el piso "${piso.nombre}"?`)) return
-    setError("")
-    try {
-      await api.habitaciones.eliminarPiso(piso.id)
-      setPisos((actuales) => actuales.filter((item) => item.id !== piso.id))
-      setSuccess("Piso eliminado")
-    } catch (err: any) {
-      setError(err.message)
-    }
+    setConfirm({
+      open: true,
+      title: "Eliminar piso",
+      message: `¿Eliminar el piso "${piso.nombre}"?`,
+      confirmLabel: "Eliminar",
+      variant: "destructive",
+      action: async () => {
+        setError("")
+        try {
+          await api.habitaciones.eliminarPiso(piso.id)
+          setPisos((actuales) => actuales.filter((item) => item.id !== piso.id))
+          setSuccess("Piso eliminado")
+        } catch (err: any) {
+          setError(err.message)
+        }
+      },
+    })
   }
 
   function abrirCategoriaDialog(categoria?: any) {
@@ -208,15 +242,23 @@ export default function ConfiguracionPage() {
   }
 
   async function handleEliminarCategoria(categoria: any) {
-    if (!window.confirm(`¿Desactivar la categoría "${categoria.nombre}"?`)) return
-    setError("")
-    try {
-      await api.ventas.eliminarCategoria(categoria.id)
-      setCategorias((actuales) => actuales.map((item) => item.id === categoria.id ? { ...item, activo: false } : item))
-      setSuccess("Categoría desactivada")
-    } catch (err: any) {
-      setError(err.message)
-    }
+    setConfirm({
+      open: true,
+      title: "Desactivar categoría",
+      message: `¿Desactivar la categoría "${categoria.nombre}"?`,
+      confirmLabel: "Desactivar",
+      variant: "destructive",
+      action: async () => {
+        setError("")
+        try {
+          await api.ventas.eliminarCategoria(categoria.id)
+          setCategorias((actuales) => actuales.map((item) => item.id === categoria.id ? { ...item, activo: false } : item))
+          setSuccess("Categoría desactivada")
+        } catch (err: any) {
+          setError(err.message)
+        }
+      },
+    })
   }
 
   async function handleGuardar() {
@@ -305,7 +347,7 @@ export default function ConfiguracionPage() {
         <Settings className="h-6 w-6" /> Configuración del Hotel
       </h1>
 
-      {error && <div className="p-3 text-sm bg-red-50 text-red-600 rounded-md border border-red-200">{error}</div>}
+      <ErrorToast message={error} onClose={() => setError("")} />
       {success && <div className="p-3 text-sm bg-green-50 text-green-600 rounded-md border border-green-200">{success}</div>}
 
       <div className="flex gap-1 border-b border-gray-200">
@@ -607,6 +649,17 @@ export default function ConfiguracionPage() {
           <div className="flex justify-end gap-2 pt-2"><Button type="button" variant="outline" onClick={() => setCategoriaDialogOpen(false)}>Cancelar</Button><Button type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar"}</Button></div>
         </form>
       </Dialog>
+      <ConfirmModal
+        open={confirm?.open ?? false}
+        onClose={() => setConfirm(null)}
+        title={confirm?.title || "Confirmar accion"}
+        message={confirm?.message || ""}
+        confirmLabel={confirm?.confirmLabel || "Confirmar"}
+        variant={confirm?.variant || "default"}
+        action={confirm?.action || (async () => {})}
+        loading={saving}
+        helperText="Revisa la información antes de continuar."
+      />
     </div>
   )
 }

@@ -6,6 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge, statusBadge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog } from "@/components/ui/dialog"
+import { ConfirmModal } from "@/components/ui/confirm-modal"
+import { SuccessToast } from "@/components/ui/success-toast"
+import { ErrorToast } from "@/components/ui/error-toast"
 import { Input } from "@/components/ui/input"
 import { AlertTriangle, CheckCircle2, Edit, Plus, Trash2 } from "lucide-react"
 import type { Habitacion, Piso, TipoHabitacion } from "@/types"
@@ -62,6 +65,7 @@ export default function HabitacionesPage() {
   const [typeForm, setTypeForm] = useState(typeInitial)
   const [floorForm, setFloorForm] = useState(floorInitial)
   const [confirm, setConfirm] = useState<ConfirmConfig | null>(null)
+  const [success, setSuccess] = useState("")
 
   function loadData() {
     setLoading(true)
@@ -174,6 +178,7 @@ export default function HabitacionesPage() {
       if (editingRoom) await api.habitaciones.actualizar(editingRoom.id, payload)
       else await api.habitaciones.crear(payload)
       setRoomDialog(false)
+      setSuccess(editingRoom ? "Habitación actualizada correctamente" : "Habitación creada correctamente")
       loadData()
     } catch (err: any) {
       setError(err.message || "No se pudo guardar la habitacion")
@@ -215,6 +220,7 @@ export default function HabitacionesPage() {
       if (editingType) await api.tiposHabitacion.actualizar(editingType.id, payload)
       else await api.tiposHabitacion.crear(payload)
       setTypeDialog(false)
+      setSuccess(editingType ? "Tipo de habitación actualizado correctamente" : "Tipo de habitación creado correctamente")
       loadData()
     } catch (err: any) {
       setError(err.message || "No se pudo guardar el tipo de habitacion")
@@ -249,6 +255,7 @@ export default function HabitacionesPage() {
         estado: floorForm.estado,
       })
       setFloorDialog(false)
+      setSuccess("Piso creado correctamente")
       loadData()
     } catch (err: any) {
       setError(err.message || "No se pudo guardar el piso")
@@ -267,6 +274,7 @@ export default function HabitacionesPage() {
       action: async () => {
         try {
           await api.habitaciones.eliminar(room.id)
+          setSuccess("Habitación eliminada correctamente")
           loadData()
         } catch (err: any) {
           setError(err.message || "No se pudo eliminar la habitacion")
@@ -285,6 +293,7 @@ export default function HabitacionesPage() {
       action: async () => {
         try {
           await api.tiposHabitacion.eliminar(type.id)
+          setSuccess("Tipo de habitación eliminado correctamente")
           loadData()
         } catch (err: any) {
           setError(err.message || "No se pudo eliminar el tipo de habitacion")
@@ -312,7 +321,7 @@ export default function HabitacionesPage() {
         </div>
       </div>
 
-      {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+      <ErrorToast message={error} onClose={() => setError("")} />
       {loading && <Card><CardContent className="p-6 text-sm text-gray-500">Cargando habitaciones...</CardContent></Card>}
 
       {!loading && (
@@ -476,11 +485,17 @@ export default function HabitacionesPage() {
       </Dialog>
 
       <ConfirmModal
-        config={confirm}
+        open={confirm?.open ?? false}
+        onClose={() => setConfirm(null)}
+        title={confirm?.title || "Confirmar accion"}
+        message={confirm?.message || ""}
+        confirmLabel={confirm?.confirmLabel || "Confirmar"}
+        variant={confirm?.variant || "default"}
+        action={confirm?.action || (async () => {})}
         loading={saving}
-        onCancel={() => setConfirm(null)}
-        onConfirm={confirmAction}
+        helperText="Revisa la información antes de continuar."
       />
+      <SuccessToast message={success} onClose={() => setSuccess("")} />
     </div>
   )
 }
@@ -498,38 +513,4 @@ function DialogActions({ saving, onCancel }: { saving: boolean; onCancel: () => 
   )
 }
 
-function ConfirmModal({
-  config,
-  loading,
-  onCancel,
-  onConfirm,
-}: {
-  config: ConfirmConfig | null
-  loading: boolean
-  onCancel: () => void
-  onConfirm: () => void
-}) {
-  const destructive = config?.variant === "destructive"
 
-  return (
-    <Dialog open={!!config?.open} onClose={onCancel} title={config?.title || "Confirmar accion"} className="max-w-md">
-      <div className="space-y-5">
-        <div className="flex gap-4">
-          <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${destructive ? "bg-red-100 text-red-600" : "bg-blue-100 text-blue-600"}`}>
-            {destructive ? <AlertTriangle className="h-6 w-6" /> : <CheckCircle2 className="h-6 w-6" />}
-          </div>
-          <div>
-            <p className="text-sm leading-6 text-gray-600">{config?.message}</p>
-            <p className="mt-2 text-xs text-gray-500">Revisa la informacion antes de continuar.</p>
-          </div>
-        </div>
-        <div className="flex justify-end gap-2 border-t pt-4">
-          <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>Cancelar</Button>
-          <Button type="button" variant={destructive ? "destructive" : "default"} onClick={onConfirm} disabled={loading}>
-            {loading ? "Procesando..." : config?.confirmLabel || "Confirmar"}
-          </Button>
-        </div>
-      </div>
-    </Dialog>
-  )
-}

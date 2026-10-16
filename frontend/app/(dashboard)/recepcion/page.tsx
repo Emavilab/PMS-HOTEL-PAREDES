@@ -7,8 +7,70 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge, statusBadge } from "@/components/ui/badge"
 import { Dialog } from "@/components/ui/dialog"
+import { SuccessToast } from "@/components/ui/success-toast"
+import { ErrorToast } from "@/components/ui/error-toast"
 import { formatCurrency, formatDateShort } from "@/lib/utils"
-import { AlertTriangle, BedDouble, Calendar, Check, ClipboardList, Clock, DoorOpen, LogIn, LogOut, Plus, RefreshCw, Search, X } from "lucide-react"
+import {
+  AlertTriangle,
+  Banknote,
+  BedDouble,
+  Calendar,
+  Check,
+  CheckCircle2,
+  ClipboardList,
+  Clock,
+  DollarSign,
+  DoorOpen,
+  LogIn,
+  LogOut,
+  Plus,
+  RefreshCw,
+  Search,
+  Wallet,
+  X,
+} from "lucide-react"
+
+function getLocalDateString(d: Date = new Date()): string {
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+function addDaysToDateString(dateStr: string, days: number): string {
+  if (!dateStr) return ""
+  const [y, m, d] = dateStr.split("-").map(Number)
+  const dt = new Date(y, m - 1, d)
+  dt.setDate(dt.getDate() + days)
+  return getLocalDateString(dt)
+}
+
+function calculateNights(entradaStr: string, salidaStr: string): number {
+  if (!entradaStr || !salidaStr) return 0
+  const [y1, m1, d1] = entradaStr.split("-").map(Number)
+  const [y2, m2, d2] = salidaStr.split("-").map(Number)
+  const t1 = new Date(y1, m1 - 1, d1).getTime()
+  const t2 = new Date(y2, m2 - 1, d2).getTime()
+  const diffDays = Math.round((t2 - t1) / 86400000)
+  return Math.max(0, diffDays)
+}
+
+function getQuickCashOptions(adelanto: number): number[] {
+  if (adelanto <= 0) return []
+  const options = new Set<number>()
+  const commonDenominations = [50, 100, 200, 500, 1000]
+  for (const denom of commonDenominations) {
+    if (denom > adelanto && denom <= adelanto + 1000) {
+      options.add(denom)
+    }
+  }
+  const next100 = Math.ceil(adelanto / 100) * 100
+  if (next100 > adelanto) options.add(next100)
+  const next500 = Math.ceil(adelanto / 500) * 500
+  if (next500 > adelanto) options.add(next500)
+
+  return Array.from(options).sort((a, b) => a - b).slice(0, 4)
+}
 
 interface AccionConfirmar {
   tipo: "checkin" | "checkout"
@@ -18,9 +80,11 @@ interface AccionConfirmar {
 export default function RecepcionPage() {
   const [arrivals, setArrivals] = useState<any[]>([])
   const [departures, setDepartures] = useState<any[]>([])
+  const [salidasTab, setSalidasTab] = useState<"hoy" | "manana" | "proximas">("hoy")
   const [rooms, setRooms] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
+  const [success, setSuccess] = useState("")
 
   const [accion, setAccion] = useState<AccionConfirmar | null>(null)
   const [selectedRoomId, setSelectedRoomId] = useState<string>("")
@@ -30,6 +94,7 @@ export default function RecepcionPage() {
   const [loadingDetalle, setLoadingDetalle] = useState(false)
   const [metodosPago, setMetodosPago] = useState<any[]>([])
   const [metodoPago, setMetodoPago] = useState("")
+  const [checkoutEfectivoRecibido, setCheckoutEfectivoRecibido] = useState("")
   const [culminando, setCulminando] = useState(false)
 
   const [showQuickReserva, setShowQuickReserva] = useState(false)
@@ -43,7 +108,7 @@ export default function RecepcionPage() {
     setLoading(true)
     Promise.all([
       api.reportes.llegadas(),
-      api.reportes.salidas(),
+      api.reportes.salidas(30),
       api.habitaciones.listar(),
       api.metodosPago.listar(),
     ]).then(([arr, dep, r, metodos]) => {
@@ -82,18 +147,42 @@ export default function RecepcionPage() {
           return
         }
         await api.reservas.checkIn(accion.reserva.id, roomId)
+        setSuccess("Check-in registrado correctamente")
       } else {
         if (!verificacion) {
           setError("No hay datos de verificación de salida")
           setConfirming(false)
           return
         }
+        const totalAPagar = verificacion.total_a_pagar || 0
+        const isEfectivo = metodoPago.toLowerCase().includes("efectivo")
+        const numRecibido = parseFloat(checkoutEfectivoRecibido) || 0
+
+        if (isEfectivo && totalAPagar > 0) {
+          if (!checkoutEfectivoRecibido.trim() || numRecibido <= 0) {
+            setError("Debes ingresar el efectivo recibido del cliente para culminar la salida en efectivo")
+            setConfirming(false)
+            return
+          }
+          if (numRecibido < totalAPagar) {
+            setError(`El dinero recibido (${formatCurrency(numRecibido)}) no cubre el total a pagar (${formatCurrency(totalAPagar)})`)
+            setConfirming(false)
+            return
+          }
+        }
+
         setCulminando(true)
-        await api.ventas.culminarSalida(accion.reserva.reserva_id || accion.reserva.id, metodoPago)
+        await api.ventas.culminarSalida(
+          accion.reserva.reserva_id || accion.reserva.id,
+          metodoPago,
+          isEfectivo && totalAPagar > 0 ? numRecibido : undefined
+        )
+        setSuccess("Salida culminada correctamente")
       }
       setAccion(null)
       setSelectedRoomId("")
       setVerificacion(null)
+      setCheckoutEfectivoRecibido("")
       loadData()
     } catch (err: any) {
       setError(err.message)
@@ -111,6 +200,7 @@ export default function RecepcionPage() {
   function openCheckOut(reserva: any) {
     setAccion({ tipo: "checkout", reserva })
     setVerificacion(null)
+    setCheckoutEfectivoRecibido("")
     setLoadingDetalle(true)
     api.ventas.verificarSalida(reserva.reserva_id || reserva.id)
       .then((data) => {
@@ -196,9 +286,6 @@ export default function RecepcionPage() {
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Button variant="outline" size="sm" className="border-white/30 bg-white/10 text-white hover:bg-white/20" onClick={() => setShowQuickReserva(true)}>
-                <Plus className="h-4 w-4 mr-1" /> Nueva Reserva
-              </Button>
               <Button variant="outline" size="sm" className="border-white/30 bg-white text-blue-700 hover:bg-blue-50" onClick={loadData} disabled={loading}>
                 <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} />
                 Actualizar
@@ -220,8 +307,8 @@ export default function RecepcionPage() {
                 <span className="text-xs font-medium uppercase tracking-wide">Salidas</span>
                 <LogOut className="h-4 w-4" />
               </div>
-              <p className="mt-2 text-3xl font-bold">{loading ? "-" : departures.length}</p>
-              <p className="text-xs text-blue-50">Habitaciones por liberar</p>
+              <p className="mt-2 text-3xl font-bold">{loading ? "-" : departures.filter(d => d.fecha_salida === getLocalDateString()).length}</p>
+              <p className="text-xs text-blue-50">Hoy · {loading ? "…" : departures.length} próximas (30d)</p>
             </div>
             <div className="rounded-xl bg-white/10 p-4 ring-1 ring-white/15 backdrop-blur">
               <div className="flex items-center justify-between text-blue-50">
@@ -295,7 +382,7 @@ export default function RecepcionPage() {
       )}
 
       {error && (
-        <div className="p-3 text-sm bg-red-50 text-red-600 rounded-md border border-red-200">{error}</div>
+        <ErrorToast message={error} onClose={() => setError("")} />
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -343,44 +430,199 @@ export default function RecepcionPage() {
         </Card>
 
         <Card className="overflow-hidden">
-          <CardHeader className="border-b bg-orange-50/70">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <LogOut className="h-5 w-5 text-orange-600" /> Salidas del Día
-              {!loading && <span className="text-sm font-normal text-gray-500">({departures.length})</span>}
-            </CardTitle>
+          <CardHeader className="border-b bg-gradient-to-r from-orange-50 to-amber-50/40 pb-0 pt-4 px-4">
+            <div className="flex items-center justify-between mb-3">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-orange-100">
+                  <LogOut className="h-4 w-4 text-orange-600" />
+                </div>
+                <span>Verificar Salidas</span>
+              </CardTitle>
+              {!loading && (
+                <div className="flex items-center gap-1.5 rounded-full bg-orange-100 px-3 py-1">
+                  <Clock className="h-3.5 w-3.5 text-orange-600" />
+                  <span className="text-xs font-semibold text-orange-700">
+                    {departures.filter(d => d.fecha_salida === getLocalDateString()).length} hoy
+                  </span>
+                </div>
+              )}
+            </div>
+            {/* Tabs */}
+            {!loading && (() => {
+              const hoy = getLocalDateString()
+              const manana = addDaysToDateString(hoy, 1)
+              const cntHoy = departures.filter(d => d.fecha_salida === hoy).length
+              const cntManana = departures.filter(d => d.fecha_salida === manana).length
+              const cntProximas = departures.filter(d => d.fecha_salida > manana).length
+              return (
+                <div className="flex border-b -mx-4 px-4">
+                  {([
+                    { key: "hoy" as const, label: "Hoy", count: cntHoy, dot: "bg-orange-500" },
+                    { key: "manana" as const, label: "Mañana", count: cntManana, dot: "bg-blue-500" },
+                    { key: "proximas" as const, label: "Próximas", count: cntProximas, dot: "bg-purple-500" },
+                  ]).map(tab => (
+                    <button
+                      key={tab.key}
+                      onClick={() => setSalidasTab(tab.key)}
+                      className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-all -mb-px ${
+                        salidasTab === tab.key
+                          ? "border-orange-500 text-orange-700"
+                          : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                      }`}
+                    >
+                      {tab.label}
+                      <span className={`inline-flex items-center justify-center rounded-full text-[10px] font-bold min-w-[18px] h-[18px] px-1 ${
+                        salidasTab === tab.key
+                          ? "bg-orange-500 text-white"
+                          : tab.count > 0 ? "bg-gray-200 text-gray-700" : "bg-gray-100 text-gray-400"
+                      }`}>{tab.count}</span>
+                    </button>
+                  ))}
+                </div>
+              )
+            })()}
           </CardHeader>
           <CardContent className="p-4">
             {loading ? (
-              <p className="text-gray-500">Cargando...</p>
-            ) : departures.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-gray-200 p-6 text-center text-sm text-gray-500">
-                No hay salidas programadas para hoy.
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {departures.map((dep) => (
-                  <div key={dep.id} className="flex flex-col gap-3 rounded-xl border border-gray-100 bg-white p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-                    <div className="min-w-0">
-                      <p className="font-medium truncate">{dep.huesped}</p>
-                      <p className="text-xs text-gray-500">{dep.codigo_confirmacion}</p>
-                      <div className="flex items-center gap-3 text-xs text-gray-400 mt-1">
-                        {dep.habitacion && <span className="flex items-center gap-1"><BedDouble className="h-3 w-3" />Hab. {dep.habitacion}</span>}
-                        {dep.total != null && <span className="font-medium text-gray-600">{formatCurrency(dep.total)}</span>}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0 sm:ml-2">
-                      <Badge {...statusBadge(dep.estado)} />
-                      <Button size="sm" variant="secondary" onClick={() => openCheckOut(dep)}>
-                        Check-out
-                      </Button>
-                    </div>
-                  </div>
+              <div className="space-y-3">
+                {[1,2].map(i => (
+                  <div key={i} className="h-20 rounded-xl bg-gray-100 animate-pulse" />
                 ))}
               </div>
-            )}
+            ) : (() => {
+              const hoy = getLocalDateString()
+              const manana = addDaysToDateString(hoy, 1)
+              const salidasHoy = departures.filter(d => d.fecha_salida === hoy)
+              const salidasManana = departures.filter(d => d.fecha_salida === manana)
+              const salidasProximas = departures.filter(d => d.fecha_salida > manana)
+
+              const depMap: Record<string, any[]> = { hoy: salidasHoy, manana: salidasManana, proximas: salidasProximas }
+              const currentDeps = depMap[salidasTab] || []
+
+              const proximasByDate = salidasProximas.reduce<Record<string, any[]>>((acc, d) => {
+                if (!acc[d.fecha_salida]) acc[d.fecha_salida] = []
+                acc[d.fecha_salida].push(d)
+                return acc
+              }, {})
+
+              function DepartureMiniCard({ dep, urgente }: { dep: any; urgente: boolean }) {
+                const noches = dep.fecha_entrada ? calculateNights(dep.fecha_entrada, dep.fecha_salida) : null
+                return (
+                  <div className={`relative flex gap-3 rounded-xl border bg-white shadow-sm overflow-hidden transition hover:shadow-md ${
+                    urgente ? "border-orange-200" : "border-gray-100"
+                  }`}>
+                    {/* Left accent bar */}
+                    <div className={`w-1 shrink-0 self-stretch rounded-l-xl ${
+                      urgente ? "bg-orange-400" : "bg-blue-400"
+                    }`} />
+                    <div className="flex flex-1 min-w-0 items-center gap-3 py-3 pr-3">
+                      {/* Room badge */}
+                      {dep.habitacion && (
+                        <div className={`flex flex-col items-center justify-center shrink-0 rounded-lg px-2 py-1.5 min-w-[48px] ${
+                          urgente ? "bg-orange-50 border border-orange-200" : "bg-blue-50 border border-blue-200"
+                        }`}>
+                          <BedDouble className={`h-3.5 w-3.5 mb-0.5 ${urgente ? "text-orange-500" : "text-blue-500"}`} />
+                          <span className={`text-xs font-bold leading-none ${urgente ? "text-orange-700" : "text-blue-700"}`}>{dep.habitacion}</span>
+                          <span className={`text-[9px] font-medium ${urgente ? "text-orange-500" : "text-blue-500"}`}>Hab.</span>
+                        </div>
+                      )}
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-semibold text-sm text-gray-900 truncate">{dep.huesped}</p>
+                          {urgente && (
+                            <span className="inline-flex items-center gap-0.5 rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold text-orange-700">
+                              <Clock className="h-2.5 w-2.5" /> HOY
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-gray-400 mt-0.5">{dep.codigo_confirmacion}</p>
+                        {dep.fecha_entrada && (
+                          <div className="flex items-center gap-1.5 mt-1 text-[11px] text-gray-500">
+                            <span>{formatDateShort(dep.fecha_entrada)}</span>
+                            <span className="text-gray-300">→</span>
+                            <span className="font-medium text-gray-700">{formatDateShort(dep.fecha_salida)}</span>
+                            {noches !== null && noches > 0 && (
+                              <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
+                                {noches}n
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      {/* Total + Button */}
+                      <div className="flex flex-col items-end gap-1.5 shrink-0">
+                        {dep.total != null && (
+                          <span className="text-sm font-bold text-gray-800">{formatCurrency(dep.total)}</span>
+                        )}
+                        <Button
+                          size="sm"
+                          className={`h-7 px-2.5 text-xs gap-1 ${urgente ? "bg-orange-500 hover:bg-orange-600" : "bg-blue-500 hover:bg-blue-600"} text-white`}
+                          onClick={() => openCheckOut(dep)}
+                        >
+                          <LogOut className="h-3 w-3" />
+                          Check-out
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              }
+
+              if (currentDeps.length === 0) {
+                return (
+                  <div className="rounded-xl border border-dashed border-gray-200 py-10 text-center">
+                    <LogOut className="mx-auto h-8 w-8 text-gray-200 mb-2" />
+                    <p className="text-sm text-gray-400 font-medium">
+                      {salidasTab === "hoy" && "Sin salidas para hoy"}
+                      {salidasTab === "manana" && "Sin salidas para mañana"}
+                      {salidasTab === "proximas" && "Sin salidas próximas"}
+                    </p>
+                    <p className="text-xs text-gray-300 mt-1">
+                      {salidasTab === "proximas" ? "No hay huéspedes con checkout en los próximos días." : "No hay huéspedes con checkout programado."}
+                    </p>
+                  </div>
+                )
+              }
+
+              if (salidasTab === "proximas") {
+                return (
+                  <div className="space-y-4">
+                    {Object.entries(proximasByDate).sort(([a], [b]) => a.localeCompare(b)).map(([fecha, deps]) => {
+                      const diasRestantes = calculateNights(hoy, fecha)
+                      return (
+                        <div key={fecha}>
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className="flex items-center gap-1.5 rounded-lg bg-purple-50 border border-purple-100 px-2.5 py-1">
+                              <Calendar className="h-3.5 w-3.5 text-purple-500" />
+                              <span className="text-xs font-bold text-purple-700">{formatDateShort(fecha)}</span>
+                            </div>
+                            <span className="text-xs text-gray-400">
+                              {diasRestantes === 1 ? "en 1 día" : `en ${diasRestantes} días`} · {deps.length} salida{deps.length !== 1 ? "s" : ""}
+                            </span>
+                          </div>
+                          <div className="space-y-2 pl-1">
+                            {deps.map(dep => <DepartureMiniCard key={dep.id} dep={dep} urgente={false} />)}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              }
+
+              return (
+                <div className="space-y-2">
+                  {currentDeps.map(dep => (
+                    <DepartureMiniCard key={dep.id} dep={dep} urgente={salidasTab === "hoy"} />
+                  ))}
+                </div>
+              )
+            })()}
           </CardContent>
         </Card>
       </div>
+
 
       <Card className="overflow-hidden">
         <CardHeader className="border-b bg-gray-50">
@@ -579,12 +821,89 @@ export default function RecepcionPage() {
                   <div className="space-y-1">
                     <label className="text-sm font-medium">Método de pago</label>
                     <select className="w-full h-10 px-3 rounded-md border border-gray-300 text-sm" value={metodoPago}
-                      onChange={(e) => setMetodoPago(e.target.value)}>
+                      onChange={(e) => {
+                        setMetodoPago(e.target.value)
+                        setCheckoutEfectivoRecibido("")
+                      }}>
                       {metodosPago.length === 0 && <option value="">Configura un método de pago</option>}
                       {metodosPago.map((metodo) => <option key={metodo.id} value={metodo.nombre}>{metodo.nombre}</option>)}
                     </select>
                   </div>
-                  <Button className="w-full" onClick={handleConfirm} disabled={culminando || verificacion.total_a_pagar < 0}>
+
+                  {metodoPago.toLowerCase().includes("efectivo") && verificacion.total_a_pagar > 0 && (
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3.5 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-emerald-950 flex items-center gap-1.5">
+                          <Banknote className="h-4 w-4 text-emerald-700" />
+                          Efectivo recibido del cliente *
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setCheckoutEfectivoRecibido(verificacion.total_a_pagar.toString())}
+                          className="text-xs text-emerald-800 underline font-semibold hover:text-emerald-950"
+                        >
+                          Exacto ({formatCurrency(verificacion.total_a_pagar)})
+                        </button>
+                      </div>
+                      <Input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        placeholder="0.00"
+                        value={checkoutEfectivoRecibido}
+                        onChange={(e) => setCheckoutEfectivoRecibido(e.target.value)}
+                        className="border-emerald-300 focus:border-emerald-500 font-semibold"
+                      />
+                      {getQuickCashOptions(verificacion.total_a_pagar).length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {getQuickCashOptions(verificacion.total_a_pagar).map((amt) => (
+                            <button
+                              key={amt}
+                              type="button"
+                              onClick={() => setCheckoutEfectivoRecibido(amt.toString())}
+                              className="px-2 py-0.5 text-xs rounded bg-white border border-emerald-300 text-emerald-800 hover:bg-emerald-100 font-medium"
+                            >
+                              {formatCurrency(amt)}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {(parseFloat(checkoutEfectivoRecibido) || 0) >= verificacion.total_a_pagar ? (
+                        <div className="flex items-center justify-between p-2.5 rounded-lg bg-emerald-600 text-white font-medium text-xs shadow-sm">
+                          <span className="flex items-center gap-1.5">
+                            <CheckCircle2 className="h-4 w-4 text-emerald-200" />
+                            Cambio a devolver al huésped:
+                          </span>
+                          <span className="text-base font-bold">
+                            {formatCurrency(Math.max(0, (parseFloat(checkoutEfectivoRecibido) || 0) - verificacion.total_a_pagar))}
+                          </span>
+                        </div>
+                      ) : (parseFloat(checkoutEfectivoRecibido) || 0) > 0 ? (
+                        <div className="flex items-center justify-between p-2 rounded bg-amber-100 border border-amber-300 text-amber-900 text-xs">
+                          <span>⚠️ Monto insuficiente. Faltan:</span>
+                          <span className="font-bold text-red-600">
+                            {formatCurrency(verificacion.total_a_pagar - (parseFloat(checkoutEfectivoRecibido) || 0))}
+                          </span>
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-emerald-800/80 italic">
+                          Ingresa el dinero recibido en efectivo para calcular el cambio a devolver.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  <Button
+                    className="w-full"
+                    onClick={handleConfirm}
+                    disabled={
+                      culminando ||
+                      verificacion.total_a_pagar < 0 ||
+                      (metodoPago.toLowerCase().includes("efectivo") &&
+                        verificacion.total_a_pagar > 0 &&
+                        (parseFloat(checkoutEfectivoRecibido) || 0) < verificacion.total_a_pagar)
+                    }
+                  >
                     {culminando ? "Procesando..." : "Culminar Salida"}
                   </Button>
                 </div>
@@ -599,20 +918,22 @@ export default function RecepcionPage() {
       <NuevaReservaDialog
         open={showQuickReserva}
         onClose={() => setShowQuickReserva(false)}
-        onCreated={loadData}
+        onCreated={() => { setSuccess("Reserva creada correctamente"); loadData() }}
       />
 
       <RentarHabitacionDialog
         room={roomToRent}
         onClose={() => setRoomToRent(null)}
-        onCreated={() => { setRoomToRent(null); loadData() }}
+        onCreated={() => { setRoomToRent(null); setSuccess("Habitación rentada correctamente"); loadData() }}
       />
 
       <DetalleHabitacionOcupadaDialog
         room={occupiedRoom}
         onClose={() => setOccupiedRoom(null)}
-        onUpdated={() => { setOccupiedRoom(null); loadData() }}
+        onUpdated={() => { setOccupiedRoom(null); setSuccess("Estadía extendida correctamente"); loadData() }}
       />
+
+      <SuccessToast message={success} onClose={() => setSuccess("")} />
     </div>
   )
 }
@@ -631,16 +952,24 @@ function NuevaReservaDialog({ open, onClose, onCreated }: { open: boolean; onClo
   useEffect(() => {
     if (open) {
       api.tiposHabitacion.listar().then(setTipos).catch(() => {})
-      const hoy = new Date().toISOString().split("T")[0]
-      const maniana = new Date(Date.now() + 86400000).toISOString().split("T")[0]
+      const hoy = getLocalDateString()
+      const maniana = addDaysToDateString(hoy, 1)
       setForm((f) => ({ ...f, fecha_entrada: hoy, fecha_salida: maniana }))
     }
   }, [open])
 
   async function handleSubmit() {
     setError("")
-    if (!form.nombres || !form.apellidos || !form.fecha_entrada || !form.fecha_salida || !form.tipo_habitacion_id) {
-      setError("Completa todos los campos obligatorios")
+    if (!form.nombres.trim() || !form.apellidos.trim() || !form.fecha_entrada || !form.fecha_salida || !form.tipo_habitacion_id) {
+      setError("Completa todos los campos obligatorios (*)")
+      return
+    }
+    if (form.fecha_salida <= form.fecha_entrada) {
+      setError("La fecha de salida debe ser posterior a la fecha de entrada")
+      return
+    }
+    if (form.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      setError("El correo electrónico ingresado no tiene un formato válido")
       return
     }
     setSaving(true)
@@ -649,12 +978,12 @@ function NuevaReservaDialog({ open, onClose, onCreated }: { open: boolean; onClo
       let huesped = huespedes.find((h: any) => h.numero_documento === form.numero_documento)
       if (!huesped) {
         huesped = await api.huespedes.crear({
-          nombres: form.nombres,
-          apellidos: form.apellidos,
+          nombres: form.nombres.trim(),
+          apellidos: form.apellidos.trim(),
           tipo_documento: form.tipo_documento,
-          numero_documento: form.numero_documento,
-          telefono: form.telefono || undefined,
-          email: form.email || undefined,
+          numero_documento: form.numero_documento.trim() || undefined,
+          telefono: form.telefono.trim() || undefined,
+          email: form.email.trim() || undefined,
         })
       }
       await api.reservas.crear({
@@ -678,8 +1007,6 @@ function NuevaReservaDialog({ open, onClose, onCreated }: { open: boolean; onClo
   return (
     <Dialog open={open} onClose={onClose} title="Nueva Reserva Rápida" className="max-w-xl">
       <div className="space-y-4">
-        {error && <div className="p-3 text-sm bg-red-50 text-red-600 rounded-md border border-red-200">{error}</div>}
-
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
             <label className="text-sm font-medium">Nombres *</label>
@@ -757,13 +1084,29 @@ function NuevaReservaDialog({ open, onClose, onCreated }: { open: boolean; onClo
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 pt-2">
+        {error && (
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs font-semibold animate-in fade-in shadow-xs">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-red-600" />
+            <span className="flex-1">{error}</span>
+            <button
+              type="button"
+              onClick={() => setError("")}
+              className="text-red-500 hover:text-red-700 p-0.5 rounded hover:bg-red-100 transition"
+              aria-label="Cerrar error"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 pt-2 border-t">
           <Button variant="outline" onClick={onClose}>Cancelar</Button>
           <Button onClick={handleSubmit} disabled={saving}>
             {saving ? "Guardando..." : "Crear Reserva"}
           </Button>
         </div>
       </div>
+      <ErrorToast message={error} onClose={() => setError("")} />
     </Dialog>
   )
 }
@@ -873,6 +1216,7 @@ function DetalleHabitacionOcupadaDialog({ room, onClose, onUpdated }: { room: an
           </div>
         </div>
       ) : null}
+      <ErrorToast message={error} onClose={() => setError("")} />
     </Dialog>
   )
 }
@@ -896,18 +1240,26 @@ function RentarHabitacionDialog({ room, onClose, onCreated }: { room: any | null
   const [error, setError] = useState("")
   const [tipoRegistro, setTipoRegistro] = useState<"hospedar" | "reserva">("hospedar")
   const [extraDesc, setExtraDesc] = useState("")
-  const [extraMonto, setExtraMonto] = useState(0)
+  const [extraMonto, setExtraMonto] = useState<string>("")
   const [taxRate, setTaxRate] = useState(15)
   const [metodosPago, setMetodosPago] = useState<any[]>([])
+  const [efectivoRecibido, setEfectivoRecibido] = useState("")
 
   const [form, setForm] = useState({
-    nombres: "", apellidos: "", tipo_documento: "DNI", numero_documento: "",
-    telefono: "", email: "",
-    fecha_entrada: "", hora_entrada: "15:00",
-    fecha_salida: "", hora_salida: "12:00",
-    adultos: 1, ninos: 0,
-    descuento: 0,
-    adelanto: 0,
+    nombres: "",
+    apellidos: "",
+    tipo_documento: "DNI",
+    numero_documento: "",
+    telefono: "",
+    email: "",
+    fecha_entrada: "",
+    hora_entrada: "15:00",
+    fecha_salida: "",
+    hora_salida: "12:00",
+    adultos: 1,
+    ninos: 0,
+    descuento: "" as string | number,
+    adelanto: "" as string | number,
     metodo_pago: "",
     tiene_vehiculo: false,
     detalle_vehiculo: "",
@@ -920,7 +1272,10 @@ function RentarHabitacionDialog({ room, onClose, onCreated }: { room: any | null
         const activos = metodos.filter((metodo: any) => metodo.activo)
         setTaxRate(Number(config.impuesto) || 0)
         setMetodosPago(activos)
-        setForm((actual) => ({ ...actual, metodo_pago: activos[0]?.nombre || "" }))
+        setForm((actual) => ({
+          ...actual,
+          metodo_pago: actual.metodo_pago || activos[0]?.nombre || "",
+        }))
       })
       .catch(() => setTaxRate(15))
   }, [room])
@@ -934,25 +1289,93 @@ function RentarHabitacionDialog({ room, onClose, onCreated }: { room: any | null
       setError("")
       setTipoRegistro("hospedar")
       setExtraDesc("")
-      setExtraMonto(0)
-      const hoy = new Date().toISOString().split("T")[0]
-      const maniana = new Date(Date.now() + 86400000).toISOString().split("T")[0]
-      setForm((f) => ({ ...f, fecha_entrada: hoy, fecha_salida: maniana, tiene_vehiculo: false, detalle_vehiculo: "" }))
+      setExtraMonto("")
+      setEfectivoRecibido("")
+      const hoy = getLocalDateString()
+      const maniana = addDaysToDateString(hoy, 1)
+      setForm((f) => ({
+        ...f,
+        nombres: "",
+        apellidos: "",
+        tipo_documento: "DNI",
+        numero_documento: "",
+        telefono: "",
+        email: "",
+        fecha_entrada: hoy,
+        fecha_salida: maniana,
+        adultos: 1,
+        ninos: 0,
+        descuento: "",
+        adelanto: "",
+        tiene_vehiculo: false,
+        detalle_vehiculo: "",
+      }))
     }
   }, [room])
 
-  const precioNoche = room?.tipo_habitacion?.precio_base || 0
-  const fechaEntrada = form.fecha_entrada ? new Date(form.fecha_entrada + "T12:00:00") : null
-  const fechaSalida = form.fecha_salida ? new Date(form.fecha_salida + "T12:00:00") : null
-  const noches = fechaEntrada && fechaSalida ? Math.max(0, Math.round((fechaSalida.getTime() - fechaEntrada.getTime()) / 86400000)) : 0
-  const subtotal = precioNoche * noches
+  // Calculations
+  const precioNoche = Number(room?.tipo_habitacion?.precio_base) || 0
+  const noches = calculateNights(form.fecha_entrada, form.fecha_salida)
+  const subtotal = Math.round(precioNoche * noches * 100) / 100
   const impuesto = Math.round(subtotal * (taxRate / 100) * 100) / 100
-  const descuento = form.descuento || 0
-  const extra = extraMonto || 0
-  const totalNeto = subtotal + impuesto - descuento + extra
-  const totalFinal = Math.max(0, totalNeto)
-  const adelanto = Math.min(form.adelanto || 0, totalFinal)
-  const saldo = totalFinal - adelanto
+  const numDescuento = Math.max(0, parseFloat(String(form.descuento)) || 0)
+  const numExtra = Math.max(0, parseFloat(String(extraMonto)) || 0)
+  const totalNeto = Math.max(0, Math.round((subtotal + impuesto - numDescuento + numExtra) * 100) / 100)
+  const totalFinal = totalNeto
+
+  const rawAdelanto = parseFloat(String(form.adelanto))
+  const numAdelanto = isNaN(rawAdelanto) ? 0 : Math.max(0, rawAdelanto)
+  const adelanto = Math.min(numAdelanto, totalFinal)
+  const saldo = Math.max(0, Math.round((totalFinal - adelanto) * 100) / 100)
+
+  // Cash and change calculations
+  const isEfectivo = form.metodo_pago.toLowerCase().includes("efectivo") || form.metodo_pago.toLowerCase() === "cash"
+  const rawRecibido = parseFloat(efectivoRecibido)
+  const numRecibido = isNaN(rawRecibido) ? 0 : Math.max(0, rawRecibido)
+  const cambio = Math.max(0, Math.round((numRecibido - adelanto) * 100) / 100)
+  const efectivoFaltante = Math.max(0, Math.round((adelanto - numRecibido) * 100) / 100)
+
+  const quickCashOptions = getQuickCashOptions(adelanto)
+
+  // Capacity validation
+  const capBase = room?.tipo_habitacion?.capacidad_base || 2
+  const capMax = room?.tipo_habitacion?.capacidad_maxima || capBase
+  const totalPersonas = Number(form.adultos || 0) + Number(form.ninos || 0)
+  const excedeCapacidad = totalPersonas > capMax
+
+  // Date handlers
+  function handleFechaEntradaChange(nuevaEntrada: string) {
+    setForm((f) => {
+      let nuevaSalida = f.fecha_salida
+      if (!nuevaSalida || nuevaSalida <= nuevaEntrada) {
+        nuevaSalida = addDaysToDateString(nuevaEntrada, 1)
+      }
+      return { ...f, fecha_entrada: nuevaEntrada, fecha_salida: nuevaSalida }
+    })
+  }
+
+  function handleFechaSalidaChange(nuevaSalida: string) {
+    setForm((f) => ({ ...f, fecha_salida: nuevaSalida }))
+  }
+
+  // Quick adelanto shortcuts
+  function handleAdelantoRapido(tipo: "todo" | "mitad" | "cero") {
+    if (tipo === "todo") {
+      setForm((f) => ({ ...f, adelanto: totalFinal }))
+      if (isEfectivo) {
+        setEfectivoRecibido(totalFinal.toString())
+      }
+    } else if (tipo === "mitad") {
+      const mitad = Math.round((totalFinal / 2) * 100) / 100
+      setForm((f) => ({ ...f, adelanto: mitad }))
+      if (isEfectivo) {
+        setEfectivoRecibido(mitad.toString())
+      }
+    } else {
+      setForm((f) => ({ ...f, adelanto: 0 }))
+      setEfectivoRecibido("")
+    }
+  }
 
   useEffect(() => {
     if (!room || step !== "buscar") return
@@ -990,12 +1413,17 @@ function RentarHabitacionDialog({ room, onClose, onCreated }: { room: any | null
     setError("")
 
     if (room.estado_limpieza !== "LIMPIA") {
-      setError("Esta habitación no se puede rentar porque no está limpia")
+      setError("Esta habitación no se puede rentar porque no está en estado LIMPIA")
+      return
+    }
+
+    if (room.estado_operativo !== "DISPONIBLE") {
+      setError(`Esta habitación no está disponible para renta (Estado: ${room.estado_operativo})`)
       return
     }
 
     if (step === "buscar" && !selectedGuest) {
-      setError("Selecciona un huésped o crea uno nuevo")
+      setError("Debes seleccionar un huésped existente o pulsar '+ Nuevo' para registrar uno")
       return
     }
 
@@ -1005,38 +1433,108 @@ function RentarHabitacionDialog({ room, onClose, onCreated }: { room: any | null
     }
 
     if (form.fecha_salida <= form.fecha_entrada) {
-      setError("La fecha de salida debe ser posterior a la entrada")
+      setError("La fecha de salida debe ser posterior a la fecha de entrada")
+      return
+    }
+
+    if (noches < 1) {
+      setError("La estancia debe ser de al menos 1 noche")
+      return
+    }
+
+    if (Number(form.adultos) < 1) {
+      setError("Debe registrarse al menos 1 adulto")
+      return
+    }
+
+    if (Number(form.ninos) < 0) {
+      setError("El número de niños no puede ser negativo")
       return
     }
 
     if (form.tiene_vehiculo && !form.detalle_vehiculo.trim()) {
-      setError("Indica el detalle del vehículo")
+      setError("Has marcado que anda vehículo; por favor indica marca, modelo o número de placa")
       return
+    }
+
+    if (numExtra > 0 && !extraDesc.trim()) {
+      setError("Ingresaste un monto extra; debes indicar una descripción para dicho cargo (ej: Cama adicional)")
+      return
+    }
+
+    if (extraDesc.trim() && numExtra <= 0) {
+      setError("Indicaste una descripción de cargo extra; debes especificar un monto mayor a 0")
+      return
+    }
+
+    if (numDescuento < 0) {
+      setError("El descuento no puede ser negativo")
+      return
+    }
+
+    if (numDescuento > subtotal + impuesto + numExtra) {
+      setError(`El descuento no puede superar el total a cobrar (${formatCurrency(subtotal + impuesto + numExtra)})`)
+      return
+    }
+
+    if (numAdelanto < 0) {
+      setError("El adelanto a pagar no puede ser negativo")
+      return
+    }
+
+    if (numAdelanto > totalFinal + 0.01) {
+      setError(`El adelanto (${formatCurrency(numAdelanto)}) no puede superar el total a pagar (${formatCurrency(totalFinal)})`)
+      return
+    }
+
+    if (adelanto > 0) {
+      if (!form.metodo_pago) {
+        setError("Selecciona el método de pago con el que se recibe el adelanto")
+        return
+      }
+      if (isEfectivo) {
+        if (!efectivoRecibido.trim() || numRecibido <= 0) {
+          setError("Ingresa el monto de efectivo recibido del cliente para dar el cambio")
+          return
+        }
+        if (numRecibido < adelanto) {
+          setError(`El efectivo recibido (${formatCurrency(numRecibido)}) es insuficiente. Faltan ${formatCurrency(efectivoFaltante)}`)
+          return
+        }
+      }
     }
 
     let guest = selectedGuest
 
     if (step === "nuevo") {
-      if (!form.nombres || !form.apellidos) {
-        setError("Completa nombre y apellidos del huésped")
+      if (!form.nombres.trim() || !form.apellidos.trim()) {
+        setError("Completa nombres y apellidos del nuevo huésped")
+        return
+      }
+      if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+        setError("El correo electrónico del nuevo huésped no tiene un formato válido")
         return
       }
       try {
         guest = await api.huespedes.crear({
-          nombres: form.nombres,
-          apellidos: form.apellidos,
+          nombres: form.nombres.trim(),
+          apellidos: form.apellidos.trim(),
           tipo_documento: form.tipo_documento,
-          numero_documento: form.numero_documento || undefined,
-          telefono: form.telefono || undefined,
-          email: form.email || undefined,
+          numero_documento: form.numero_documento.trim() || undefined,
+          telefono: form.telefono.trim() || undefined,
+          email: form.email.trim() || undefined,
         })
       } catch (err: any) {
         setError(err.message)
         return
       }
     } else if (selectedGuest) {
-      if (!selectedGuest.nombres || !selectedGuest.apellidos) {
-        setError("Completa nombre y apellidos del huésped")
+      if (!selectedGuest.nombres?.trim() || !selectedGuest.apellidos?.trim()) {
+        setError("Los nombres y apellidos del huésped son obligatorios")
+        return
+      }
+      if (selectedGuest.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(selectedGuest.email.trim())) {
+        setError("El correo electrónico del huésped no tiene un formato válido")
         return
       }
     }
@@ -1045,16 +1543,16 @@ function RentarHabitacionDialog({ room, onClose, onCreated }: { room: any | null
     try {
       if (step === "buscar" && selectedGuest) {
         guest = await api.huespedes.actualizar(selectedGuest.id, {
-          nombres: selectedGuest.nombres,
-          apellidos: selectedGuest.apellidos,
+          nombres: selectedGuest.nombres.trim(),
+          apellidos: selectedGuest.apellidos.trim(),
           tipo_documento: selectedGuest.tipo_documento || undefined,
-          numero_documento: selectedGuest.numero_documento || undefined,
-          telefono: selectedGuest.telefono || undefined,
-          email: selectedGuest.email || undefined,
-          nacionalidad: selectedGuest.nacionalidad || undefined,
-          direccion: selectedGuest.direccion || undefined,
+          numero_documento: selectedGuest.numero_documento?.trim() || undefined,
+          telefono: selectedGuest.telefono?.trim() || undefined,
+          email: selectedGuest.email?.trim() || undefined,
+          nacionalidad: selectedGuest.nacionalidad?.trim() || undefined,
+          direccion: selectedGuest.direccion?.trim() || undefined,
           fecha_nacimiento: selectedGuest.fecha_nacimiento || undefined,
-          notas: selectedGuest.notas || undefined,
+          notas: selectedGuest.notas?.trim() || undefined,
         })
       }
 
@@ -1066,26 +1564,29 @@ function RentarHabitacionDialog({ room, onClose, onCreated }: { room: any | null
         fecha_salida: form.fecha_salida,
         adultos: form.adultos,
         ninos: form.ninos,
-        descuento: descuento,
+        descuento: numDescuento,
         origen: "Walk-in",
         tiene_vehiculo: form.tiene_vehiculo,
-        detalle_vehiculo: form.tiene_vehiculo ? form.detalle_vehiculo : undefined,
+        detalle_vehiculo: form.tiene_vehiculo ? form.detalle_vehiculo.trim() : undefined,
       })
 
-      if (extra > 0 && extraDesc) {
+      if (numExtra > 0) {
         await api.facturacion.agregarCargo(reserva.id, {
-          descripcion: extraDesc,
+          descripcion: extraDesc.trim() || "Cargo extra",
           cantidad: 1,
-          precio_unitario: extra,
-          total: extra,
+          precio_unitario: numExtra,
+          total: numExtra,
         })
       }
 
       if (adelanto > 0) {
+        const refPago = isEfectivo && numRecibido
+          ? `Adelanto efectivo (Recibido: ${formatCurrency(numRecibido)}, Cambio: ${formatCurrency(cambio)})`
+          : `Adelanto - ${form.fecha_entrada}`
         await api.facturacion.agregarPago(reserva.id, {
           monto: adelanto,
           metodo_pago: form.metodo_pago,
-          referencia: `Adelanto - ${form.fecha_entrada}`,
+          referencia: refPago,
         })
       }
 
@@ -1101,207 +1602,283 @@ function RentarHabitacionDialog({ room, onClose, onCreated }: { room: any | null
     }
   }
 
-  const inputCls = "w-full h-10 px-3 rounded-md border border-gray-300 text-sm"
+  const inputCls = "w-full h-10 px-3 rounded-md border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
 
   return (
-    <Dialog open={!!room} onClose={onClose} title={`Rentar Hab. ${room?.numero}`} className="max-w-4xl">
+    <Dialog open={!!room} onClose={onClose} title={`Rentar Habitación ${room?.numero}`} className="max-w-4xl">
       {room && (
         <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
-          <div className="flex items-center justify-between bg-blue-50 p-3 rounded-md">
+          {/* Room Header Info */}
+          <div className="flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 p-3.5 rounded-xl shadow-sm">
             <div>
-              <p className="text-sm font-semibold">{room.tipo_habitacion?.nombre} - Hab. {room.numero}</p>
-              <p className="text-xs text-gray-500">Piso {room.piso} · Cap. {room.tipo_habitacion?.capacidad_base} pers.</p>
+              <p className="text-base font-bold text-gray-900">{room.tipo_habitacion?.nombre} · Habitación {room.numero}</p>
+              <div className="flex flex-wrap items-center gap-2 mt-0.5 text-xs text-gray-600">
+                <span>Piso {room.piso || "-"}</span>
+                <span>•</span>
+                <span>Capacidad sugerida: {capBase} pers. (Máx. {capMax})</span>
+                <span>•</span>
+                <span className="inline-flex items-center text-green-700 font-semibold bg-green-100 px-2 py-0.5 rounded-full">
+                  <CheckCircle2 className="h-3 w-3 mr-1" /> Lista para rentar
+                </span>
+              </div>
             </div>
             <div className="text-right">
-              <p className="text-sm font-bold text-blue-700">{formatCurrency(precioNoche)}</p>
-              <p className="text-xs text-gray-500">/noche</p>
+              <p className="text-base font-extrabold text-blue-700">{formatCurrency(precioNoche)}</p>
+              <p className="text-xs text-gray-500 font-medium">por noche</p>
             </div>
           </div>
 
-          {error && <div className="p-3 text-sm bg-red-50 text-red-600 rounded-md border border-red-200">{error}</div>}
-
-          <div className="flex gap-2 bg-gray-100 p-1 rounded-md">
+          {/* Type Toggle: Hospedar inmediato vs Reserva */}
+          <div className="flex gap-2 bg-gray-100 p-1 rounded-lg">
             <button
-              className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${tipoRegistro === "hospedar" ? "bg-white shadow text-blue-700" : "text-gray-600 hover:text-gray-800"}`}
+              type="button"
+              className={`flex-1 py-2 text-sm font-semibold rounded-md transition-all ${tipoRegistro === "hospedar" ? "bg-white shadow text-blue-700 ring-1 ring-black/5" : "text-gray-600 hover:text-gray-900"}`}
               onClick={() => setTipoRegistro("hospedar")}
-            >🏨 Hospedar</button>
+            >
+              🏨 Hospedar Inmediato (Check-in ahora)
+            </button>
             <button
-              className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${tipoRegistro === "reserva" ? "bg-white shadow text-blue-700" : "text-gray-600 hover:text-gray-800"}`}
+              type="button"
+              className={`flex-1 py-2 text-sm font-semibold rounded-md transition-all ${tipoRegistro === "reserva" ? "bg-white shadow text-blue-700 ring-1 ring-black/5" : "text-gray-600 hover:text-gray-900"}`}
               onClick={() => setTipoRegistro("reserva")}
-            >📋 Reserva</button>
+            >
+              📋 Solo Reservar
+            </button>
           </div>
 
+          {/* Guest selection / creation */}
           {step === "buscar" && (
             <div className="space-y-3">
-              <label className="text-sm font-medium block">Huésped</label>
-              <div className="flex gap-2">
-                <Input placeholder="Buscar por nombre, doc. o email..." value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)} />
-                <Button size="sm" variant="outline" onClick={() => { setStep("nuevo"); setSelectedGuest(null) }}>
-                  <Plus className="h-4 w-4 mr-1" /> Nuevo
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-semibold text-gray-800">Huésped Titular *</label>
+                <Button size="sm" variant="outline" onClick={() => { setStep("nuevo"); setSelectedGuest(null) }} className="text-xs h-8">
+                  <Plus className="h-3.5 w-3.5 mr-1 text-blue-600" /> Crear Nuevo Huésped
                 </Button>
               </div>
 
-              {searching && <p className="text-xs text-gray-500">Buscando...</p>}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  className="pl-9"
+                  placeholder="Buscar por nombre, documento o teléfono..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
 
-              {guestResults.length > 0 && (
-                <div className="max-h-32 overflow-auto space-y-1 border rounded-md p-1">
+              {searching && <p className="text-xs text-gray-500 animate-pulse">Buscando huéspedes...</p>}
+
+              {guestResults.length > 0 && !selectedGuest && (
+                <div className="max-h-36 overflow-auto space-y-1 border rounded-lg p-1.5 bg-white shadow-sm">
                   {guestResults.map((g) => (
-                    <div key={g.id}
-                      className={`p-2 rounded-md cursor-pointer text-sm ${selectedGuest?.id === g.id ? "bg-blue-100 border border-blue-300" : "bg-gray-50 hover:bg-gray-100"}`}
-                      onClick={() => setSelectedGuest(g)}>
-                      <p className="font-medium">{g.nombres} {g.apellidos}</p>
-                      <p className="text-xs text-gray-500">{g.tipo_documento}: {g.numero_documento}</p>
+                    <div
+                      key={g.id}
+                      className="p-2 rounded-md cursor-pointer text-sm bg-gray-50 hover:bg-blue-50 transition border border-transparent hover:border-blue-200"
+                      onClick={() => setSelectedGuest(g)}
+                    >
+                      <p className="font-semibold text-gray-900">{g.nombres} {g.apellidos}</p>
+                      <p className="text-xs text-gray-500">{g.tipo_documento || "Doc"}: {g.numero_documento || "S/D"} · Tel: {g.telefono || "S/T"}</p>
                     </div>
                   ))}
                 </div>
               )}
 
               {selectedGuest && (
-                <div className="rounded-xl border border-green-200 bg-green-50 p-4 text-sm">
-                  <div className="mb-3 flex items-start justify-between gap-3">
+                <div className="rounded-xl border border-green-200 bg-green-50/70 p-4 text-sm shadow-sm space-y-3">
+                  <div className="flex items-start justify-between gap-3 border-b border-green-200/80 pb-2">
                     <div>
-                      <p className="font-semibold text-green-900">Cliente seleccionado</p>
-                      <p className="text-xs text-green-700">Revisa y corrige sus datos antes de hospedar o reservar.</p>
+                      <span className="inline-flex items-center text-xs font-semibold uppercase tracking-wider text-green-800 bg-green-100 px-2 py-0.5 rounded">
+                        ✓ Huésped Seleccionado
+                      </span>
+                      <p className="font-bold text-gray-900 mt-1">{selectedGuest.nombres} {selectedGuest.apellidos}</p>
+                      <p className="text-xs text-green-800">Puedes verificar o actualizar sus datos de contacto aquí mismo.</p>
                     </div>
-                    <button onClick={() => setSelectedGuest(null)} className="text-xs font-medium text-red-600 hover:underline">Quitar</button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedGuest(null)}
+                      className="text-xs font-semibold text-red-600 hover:text-red-800 bg-white border border-red-200 px-2 py-1 rounded"
+                    >
+                      Cambiar
+                    </button>
                   </div>
 
-                  <div className="grid gap-3 md:grid-cols-2">
+                  <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
                     <div className="space-y-1">
-                      <label className="text-xs font-medium">Nombres *</label>
+                      <label className="text-xs font-semibold text-gray-700">Nombres *</label>
                       <Input value={selectedGuest.nombres || ""} onChange={(e) => setSelectedGuest({ ...selectedGuest, nombres: e.target.value })} />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-xs font-medium">Apellidos *</label>
+                      <label className="text-xs font-semibold text-gray-700">Apellidos *</label>
                       <Input value={selectedGuest.apellidos || ""} onChange={(e) => setSelectedGuest({ ...selectedGuest, apellidos: e.target.value })} />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-xs font-medium">Tipo Doc.</label>
-                      <select className={inputCls} value={selectedGuest.tipo_documento || ""} onChange={(e) => setSelectedGuest({ ...selectedGuest, tipo_documento: e.target.value })}>
-                        <option value="">Sin especificar</option>
-                        <option value="DNI">DNI</option>
-                        <option value="Pasaporte">Pasaporte</option>
-                        <option value="Cédula">Cédula</option>
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-xs font-medium">N° Documento</label>
+                      <label className="text-xs font-semibold text-gray-700">N° Documento</label>
                       <Input value={selectedGuest.numero_documento || ""} onChange={(e) => setSelectedGuest({ ...selectedGuest, numero_documento: e.target.value })} />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-xs font-medium">Teléfono</label>
+                      <label className="text-xs font-semibold text-gray-700">Teléfono</label>
                       <Input value={selectedGuest.telefono || ""} onChange={(e) => setSelectedGuest({ ...selectedGuest, telefono: e.target.value })} />
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-xs font-medium">Email</label>
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="text-xs font-semibold text-gray-700">Email</label>
                       <Input type="email" value={selectedGuest.email || ""} onChange={(e) => setSelectedGuest({ ...selectedGuest, email: e.target.value })} />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-xs font-medium">Nacionalidad</label>
-                      <Input value={selectedGuest.nacionalidad || ""} onChange={(e) => setSelectedGuest({ ...selectedGuest, nacionalidad: e.target.value })} />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-xs font-medium">Fecha nacimiento</label>
-                      <Input type="date" value={selectedGuest.fecha_nacimiento || ""} onChange={(e) => setSelectedGuest({ ...selectedGuest, fecha_nacimiento: e.target.value })} />
-                    </div>
-                    <div className="space-y-1 md:col-span-2">
-                      <label className="text-xs font-medium">Dirección</label>
-                      <Input value={selectedGuest.direccion || ""} onChange={(e) => setSelectedGuest({ ...selectedGuest, direccion: e.target.value })} />
-                    </div>
-                    <div className="space-y-1 md:col-span-2">
-                      <label className="text-xs font-medium">Notas</label>
-                      <Input value={selectedGuest.notas || ""} onChange={(e) => setSelectedGuest({ ...selectedGuest, notas: e.target.value })} />
                     </div>
                   </div>
                 </div>
               )}
-
             </div>
           )}
 
           {step === "nuevo" && (
-            <div className="space-y-3 p-3 bg-gray-50 rounded-md">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Nuevo huésped</span>
-                <button onClick={() => setStep("buscar")} className="text-xs text-blue-600 hover:underline">Buscar existente</button>
+            <div className="space-y-3 p-4 bg-gray-50 border rounded-xl shadow-sm">
+              <div className="flex items-center justify-between border-b pb-2">
+                <span className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
+                  <Plus className="h-4 w-4 text-blue-600" /> Registrar Nuevo Huésped
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setStep("buscar")}
+                  className="text-xs font-semibold text-blue-600 hover:text-blue-800 underline"
+                >
+                  Buscar Huésped Existente
+                </button>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="text-xs font-medium">Nombres *</label><Input value={form.nombres} onChange={(e) => setForm({ ...form, nombres: e.target.value })} /></div>
-                <div><label className="text-xs font-medium">Apellidos *</label><Input value={form.apellidos} onChange={(e) => setForm({ ...form, apellidos: e.target.value })} /></div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-gray-700">Nombres *</label>
+                  <Input placeholder="Ej: Juan Carlos" value={form.nombres} onChange={(e) => setForm({ ...form, nombres: e.target.value })} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-gray-700">Apellidos *</label>
+                  <Input placeholder="Ej: Pérez Rodríguez" value={form.apellidos} onChange={(e) => setForm({ ...form, apellidos: e.target.value })} />
+                </div>
               </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="text-xs font-medium">Tipo Doc.</label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-gray-700">Tipo Doc.</label>
                   <select className={inputCls} value={form.tipo_documento} onChange={(e) => setForm({ ...form, tipo_documento: e.target.value })}>
                     <option value="DNI">DNI</option>
                     <option value="Pasaporte">Pasaporte</option>
                     <option value="Cédula">Cédula</option>
+                    <option value="Licencia">Licencia</option>
                   </select>
                 </div>
-                <div className="col-span-2"><label className="text-xs font-medium">N° Documento</label><Input value={form.numero_documento} onChange={(e) => setForm({ ...form, numero_documento: e.target.value })} /></div>
+                <div className="space-y-1 sm:col-span-2">
+                  <label className="text-xs font-semibold text-gray-700">N° Documento</label>
+                  <Input placeholder="0801-1990-12345" value={form.numero_documento} onChange={(e) => setForm({ ...form, numero_documento: e.target.value })} />
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="text-xs font-medium">Teléfono</label><Input value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} /></div>
-                <div><label className="text-xs font-medium">Email</label><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-gray-700">Teléfono</label>
+                  <Input placeholder="9999-9999" value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-gray-700">Email</label>
+                  <Input type="email" placeholder="cliente@ejemplo.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+                </div>
               </div>
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Entrada</label>
-              <Input type="date" value={form.fecha_entrada} onChange={(e) => setForm({ ...form, fecha_entrada: e.target.value })} />
+          {/* Dates & Times */}
+          <div className="rounded-xl border p-4 bg-white shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
+                <Calendar className="h-4 w-4 text-blue-600" /> Fechas de Estadía
+              </span>
+              <span className="inline-flex items-center font-bold text-xs bg-blue-100 text-blue-800 px-2.5 py-0.5 rounded-full">
+                {noches} {noches === 1 ? "noche" : "noches"}
+              </span>
             </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Hora entrada</label>
-              <Input type="time" value={form.hora_entrada} onChange={(e) => setForm({ ...form, hora_entrada: e.target.value })} />
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-700">Entrada *</label>
+                <Input
+                  type="date"
+                  min={getLocalDateString()}
+                  value={form.fecha_entrada}
+                  onChange={(e) => handleFechaEntradaChange(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-700">Hora Entrada</label>
+                <Input type="time" value={form.hora_entrada} onChange={(e) => setForm({ ...form, hora_entrada: e.target.value })} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-700">Salida *</label>
+                <Input
+                  type="date"
+                  min={addDaysToDateString(form.fecha_entrada, 1)}
+                  value={form.fecha_salida}
+                  onChange={(e) => handleFechaSalidaChange(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-700">Hora Salida</label>
+                <Input type="time" value={form.hora_salida} onChange={(e) => setForm({ ...form, hora_salida: e.target.value })} />
+              </div>
             </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Salida</label>
-              <Input type="date" value={form.fecha_salida} onChange={(e) => setForm({ ...form, fecha_salida: e.target.value })} />
+
+            {/* Guests count */}
+            <div className="grid grid-cols-2 gap-3 pt-1 border-t">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-700">Adultos (mín. 1) *</label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={form.adultos}
+                  onChange={(e) => setForm({ ...form, adultos: Math.max(1, parseInt(e.target.value) || 1) })}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-700">Niños</label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={form.ninos}
+                  onChange={(e) => setForm({ ...form, ninos: Math.max(0, parseInt(e.target.value) || 0) })}
+                />
+              </div>
             </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Hora salida</label>
-              <Input type="time" value={form.hora_salida} onChange={(e) => setForm({ ...form, hora_salida: e.target.value })} />
-            </div>
+
+            {excedeCapacidad && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 p-2 rounded-lg font-medium">
+                ⚠️ Atención: La capacidad máxima sugerida para esta habitación es de {capMax} personas. Has indicado {totalPersonas} personas.
+              </p>
+            )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Adultos</label>
-              <Input type="number" min={1} value={form.adultos} onChange={(e) => setForm({ ...form, adultos: parseInt(e.target.value) || 1 })} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Niños</label>
-              <Input type="number" min={0} value={form.ninos} onChange={(e) => setForm({ ...form, ninos: parseInt(e.target.value) || 0 })} />
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-3">
+          {/* Vehicle Check */}
+          <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-3.5 space-y-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-sm font-medium">¿El huésped anda vehículo?</p>
-                <p className="text-xs text-gray-500">Se guardará en la estadía para consulta desde habitación ocupada.</p>
+                <p className="text-sm font-semibold text-gray-900">¿El huésped tiene vehículo?</p>
+                <p className="text-xs text-gray-500">Se registrará en el sistema para control de estacionamiento.</p>
               </div>
-              <div className="flex rounded-md bg-white p-1 text-sm ring-1 ring-gray-200">
+              <div className="flex rounded-lg bg-white p-1 text-xs font-semibold ring-1 ring-gray-200">
                 <button
                   type="button"
-                  className={`rounded px-4 py-1.5 font-medium ${!form.tiene_vehiculo ? "bg-blue-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
+                  className={`rounded-md px-4 py-1.5 transition ${!form.tiene_vehiculo ? "bg-blue-600 text-white shadow-sm" : "text-gray-600 hover:bg-gray-100"}`}
                   onClick={() => setForm({ ...form, tiene_vehiculo: false, detalle_vehiculo: "" })}
-                >No</button>
+                >
+                  No
+                </button>
                 <button
                   type="button"
-                  className={`rounded px-4 py-1.5 font-medium ${form.tiene_vehiculo ? "bg-blue-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
+                  className={`rounded-md px-4 py-1.5 transition ${form.tiene_vehiculo ? "bg-blue-600 text-white shadow-sm" : "text-gray-600 hover:bg-gray-100"}`}
                   onClick={() => setForm({ ...form, tiene_vehiculo: true })}
-                >Sí</button>
+                >
+                  Sí
+                </button>
               </div>
             </div>
             {form.tiene_vehiculo && (
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Detalle del vehículo *</label>
+              <div className="space-y-1 pt-1">
+                <label className="text-xs font-semibold text-gray-700">Detalles del vehículo (Marca, Modelo, Placa) *</label>
                 <Input
-                  placeholder="Ej: Toyota Corolla blanco, placa ABC-123"
+                  placeholder="Ej: Toyota Hilux gris, Placa HAK-1234"
                   value={form.detalle_vehiculo}
                   onChange={(e) => setForm({ ...form, detalle_vehiculo: e.target.value })}
                 />
@@ -1309,55 +1886,292 @@ function RentarHabitacionDialog({ room, onClose, onCreated }: { room: any | null
             )}
           </div>
 
-          <div className="border-t pt-3 space-y-3">
-            <h4 className="text-sm font-semibold">Cobros</h4>
-            <div className="grid grid-cols-2 gap-3">
+          {/* Extra charge & Discount */}
+          <div className="rounded-xl border p-4 bg-white shadow-sm space-y-3">
+            <h4 className="text-sm font-bold text-gray-900">Cargos Extra y Descuento</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1">
-                <label className="text-sm font-medium">Descuento</label>
-                <Input type="number" min={0} step={0.01} value={form.descuento} onChange={(e) => setForm({ ...form, descuento: parseFloat(e.target.value) || 0 })} />
+                <label className="text-xs font-semibold text-gray-700">Descuento aplicado</label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  placeholder="0.00"
+                  value={form.descuento}
+                  onChange={(e) => setForm({ ...form, descuento: e.target.value })}
+                />
               </div>
               <div className="space-y-1">
-                <label className="text-sm font-medium">Adelanto (a pagar ahora)</label>
-                <Input type="number" min={0} step={0.01} value={form.adelanto} onChange={(e) => setForm({ ...form, adelanto: parseFloat(e.target.value) || 0 })} />
+                <label className="text-xs font-semibold text-gray-700">Descripción de Cargo Extra</label>
+                <Input
+                  placeholder="Ej: Cama adicional, Early check-in..."
+                  value={extraDesc}
+                  onChange={(e) => setExtraDesc(e.target.value)}
+                />
               </div>
               <div className="space-y-1">
-                <label className="text-sm font-medium">Método de pago</label>
-                <select className={inputCls} value={form.metodo_pago} onChange={(e) => setForm({ ...form, metodo_pago: e.target.value })}>
+                <label className="text-xs font-semibold text-gray-700">Monto Cargo Extra</label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  placeholder="0.00"
+                  value={extraMonto}
+                  onChange={(e) => setExtraMonto(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Financial Summary */}
+          <div className="bg-slate-50 rounded-xl p-4 space-y-2 text-sm border shadow-sm">
+            <div className="flex justify-between text-gray-600">
+              <span>Hospedaje ({noches} noche{noches !== 1 ? "s" : ""} × {formatCurrency(precioNoche)})</span>
+              <span className="font-semibold text-gray-900">{formatCurrency(subtotal)}</span>
+            </div>
+            <div className="flex justify-between text-gray-600">
+              <span>Impuesto hotelero ({taxRate}%)</span>
+              <span className="font-semibold text-gray-900">+{formatCurrency(impuesto)}</span>
+            </div>
+            {numDescuento > 0 && (
+              <div className="flex justify-between text-red-600">
+                <span>Descuento</span>
+                <span className="font-semibold">-{formatCurrency(numDescuento)}</span>
+              </div>
+            )}
+            {numExtra > 0 && (
+              <div className="flex justify-between text-blue-700">
+                <span>Cargo extra ({extraDesc || "Adicional"})</span>
+                <span className="font-semibold">+{formatCurrency(numExtra)}</span>
+              </div>
+            )}
+            <div className="flex justify-between font-extrabold text-base pt-2 border-t mt-1 text-gray-900">
+              <span>TOTAL ESTADÍA</span>
+              <span className="text-blue-800 text-lg">{formatCurrency(totalFinal)}</span>
+            </div>
+          </div>
+
+          {/* Payment Section: Adelanto / Immediate Payment */}
+          <div className="rounded-xl border p-4 bg-white shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div>
+                <h4 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
+                  <Wallet className="h-4 w-4 text-emerald-600" /> Cobro en Recepción (Adelanto / Total)
+                </h4>
+                <p className="text-xs text-gray-500">Monto que el huésped pagará en este momento.</p>
+              </div>
+
+              {/* Quick shortcut buttons */}
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleAdelantoRapido("todo")}
+                  className="px-2.5 py-1 text-xs rounded-md bg-emerald-50 border border-emerald-300 text-emerald-800 font-semibold hover:bg-emerald-100 transition"
+                >
+                  Cobrar Todo ({formatCurrency(totalFinal)})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAdelantoRapido("mitad")}
+                  className="px-2.5 py-1 text-xs rounded-md bg-blue-50 border border-blue-300 text-blue-800 font-semibold hover:bg-blue-100 transition"
+                >
+                  Cobrar 50% ({formatCurrency(Math.round((totalFinal / 2) * 100) / 100)})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAdelantoRapido("cero")}
+                  className="px-2.5 py-1 text-xs rounded-md bg-gray-50 border border-gray-300 text-gray-700 font-semibold hover:bg-gray-100 transition"
+                >
+                  Sin cobro ahora ($0)
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-700">Monto a Cobrar Ahora *</label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={totalFinal}
+                  step={0.01}
+                  placeholder="0.00"
+                  value={form.adelanto}
+                  onChange={(e) => {
+                    setForm({ ...form, adelanto: e.target.value })
+                    if (isEfectivo && efectivoRecibido) {
+                      // re-eval
+                    }
+                  }}
+                  className="font-bold text-base"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-700">Método de Pago *</label>
+                <select
+                  className={inputCls}
+                  value={form.metodo_pago}
+                  onChange={(e) => {
+                    setForm({ ...form, metodo_pago: e.target.value })
+                    setEfectivoRecibido("")
+                  }}
+                >
                   {metodosPago.length === 0 && <option value="">Configura un método de pago</option>}
-                  {metodosPago.map((metodo) => <option key={metodo.id} value={metodo.nombre}>{metodo.nombre}</option>)}
+                  {metodosPago.map((metodo) => (
+                    <option key={metodo.id} value={metodo.nombre}>
+                      {metodo.nombre}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Cargo extra</label>
-                <Input placeholder="Descripción" value={extraDesc} onChange={(e) => setExtraDesc(e.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Monto extra</label>
-                <Input type="number" min={0} step={0.01} value={extraMonto} onChange={(e) => setExtraMonto(parseFloat(e.target.value) || 0)} />
-              </div>
+
+            {/* Saldo summary */}
+            <div className="flex items-center justify-between text-xs px-3 py-2 rounded-lg bg-gray-50 border">
+              <span className="text-gray-600 font-medium">
+                Cobro ahora: <strong className="text-emerald-700">{formatCurrency(adelanto)}</strong>
+              </span>
+              <span className="text-gray-600 font-medium">
+                Saldo pendiente en Check-out: <strong className="text-blue-700">{formatCurrency(saldo)}</strong>
+              </span>
             </div>
+
+            {/* CASH PAYMENT & CHANGE SECTION (Calculadora de cambio para efectivo) */}
+            {isEfectivo && adelanto > 0 && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 space-y-3 animate-in fade-in">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Banknote className="h-5 w-5 text-emerald-700" />
+                    <div>
+                      <h5 className="font-bold text-emerald-950 text-sm">Pago en Efectivo y Cambio</h5>
+                      <p className="text-[11px] text-emerald-800">Calculadora automática de cambio para el cliente.</p>
+                    </div>
+                  </div>
+                  <span className="text-xs bg-emerald-100 text-emerald-900 font-bold px-2.5 py-1 rounded-full border border-emerald-300">
+                    A cobrar: {formatCurrency(adelanto)}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-emerald-950">Efectivo Recibido del Huésped *</label>
+                      <button
+                        type="button"
+                        onClick={() => setEfectivoRecibido(adelanto.toString())}
+                        className="text-[11px] text-emerald-800 hover:text-emerald-950 font-semibold underline"
+                      >
+                        Monto exacto
+                      </button>
+                    </div>
+                    <Input
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      placeholder="0.00"
+                      value={efectivoRecibido}
+                      onChange={(e) => setEfectivoRecibido(e.target.value)}
+                      className="border-emerald-300 focus:border-emerald-500 font-extrabold text-base bg-white"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-emerald-900">Billetes sugeridos</label>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setEfectivoRecibido(adelanto.toString())}
+                        className="px-2 py-1 text-xs rounded-md bg-white border border-emerald-300 text-emerald-800 hover:bg-emerald-100 font-semibold shadow-2xs"
+                      >
+                        Exacto ({formatCurrency(adelanto)})
+                      </button>
+                      {quickCashOptions.map((amount) => (
+                        <button
+                          key={amount}
+                          type="button"
+                          onClick={() => setEfectivoRecibido(amount.toString())}
+                          className="px-2 py-1 text-xs rounded-md bg-white border border-emerald-300 text-emerald-800 hover:bg-emerald-100 font-semibold shadow-2xs"
+                        >
+                          {formatCurrency(amount)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Change calculation display */}
+                {numRecibido >= adelanto ? (
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-emerald-600 text-white font-medium shadow-sm">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-5 w-5 text-emerald-200" />
+                      <span className="text-sm font-semibold">Cambio a entregar al cliente:</span>
+                    </div>
+                    <span className="text-xl font-extrabold tracking-tight">
+                      {formatCurrency(cambio)}
+                    </span>
+                  </div>
+                ) : numRecibido > 0 ? (
+                  <div className="flex items-center justify-between p-2.5 rounded-lg bg-amber-100 border border-amber-300 text-amber-950 text-xs font-semibold">
+                    <span className="flex items-center gap-1.5 text-amber-800">
+                      <AlertTriangle className="h-4 w-4 text-amber-600" />
+                      El dinero recibido es insuficiente. Faltan:
+                    </span>
+                    <span className="font-extrabold text-sm text-red-600">
+                      {formatCurrency(efectivoFaltante)}
+                    </span>
+                  </div>
+                ) : (
+                  <p className="text-xs text-emerald-800/80 italic">
+                    Ingresa el monto en efectivo recibido para ver el cambio exacto a entregar.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {adelanto === 0 && (
+              <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-lg text-xs text-blue-900 font-medium">
+                ℹ️ No se realizará cobro en este momento. El total completo de {formatCurrency(totalFinal)} se cobrará al finalizar la estancia en el Check-out.
+              </div>
+            )}
           </div>
 
-          <div className="bg-gray-50 rounded-md p-3 space-y-1 text-sm border">
-            <div className="flex justify-between"><span>Subtotal ({noches} noche{noches !== 1 ? "s" : ""})</span><span>{formatCurrency(subtotal)}</span></div>
-            <div className="flex justify-between"><span>Impuesto ({taxRate}%)</span><span>{formatCurrency(impuesto)}</span></div>
-            {descuento > 0 && <div className="flex justify-between text-red-600"><span>Descuento</span><span>-{formatCurrency(descuento)}</span></div>}
-            {extra > 0 && <div className="flex justify-between"><span>Cargo extra: {extraDesc || "—"}</span><span>+{formatCurrency(extra)}</span></div>}
-            <div className="flex justify-between font-bold text-base pt-1 border-t mt-1"><span>Total</span><span>{formatCurrency(totalFinal)}</span></div>
-            {adelanto > 0 && <div className="flex justify-between text-green-600"><span>Adelanto</span><span>-{formatCurrency(adelanto)}</span></div>}
-            {adelanto > 0 && <div className="flex justify-between font-semibold text-blue-700"><span>Saldo pendiente</span><span>{formatCurrency(saldo)}</span></div>}
-          </div>
-
-          <div className="flex justify-end gap-2 pt-2 border-t">
-            <Button variant="outline" onClick={onClose}>Cancelar</Button>
-            <Button onClick={handleSubmit} disabled={saving || (!selectedGuest && step === "buscar")}>
-              {saving ? "Procesando..." : tipoRegistro === "hospedar" ? "Hospedar" : "Crear Reserva"}
-            </Button>
+          {/* Footer Actions */}
+          <div className="pt-3 border-t space-y-2.5">
+            {error && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs font-semibold animate-in fade-in shadow-xs">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-red-600" />
+                <span className="flex-1">{error}</span>
+                <button
+                  type="button"
+                  onClick={() => setError("")}
+                  className="text-red-500 hover:text-red-700 p-0.5 rounded hover:bg-red-100 transition"
+                  aria-label="Cerrar error"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+            <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2">
+              <Button variant="outline" onClick={onClose} disabled={saving}>
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleSubmit}
+                disabled={
+                  saving ||
+                  (!selectedGuest && step === "buscar") ||
+                  (isEfectivo && adelanto > 0 && numRecibido < adelanto)
+                }
+                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-5"
+              >
+                {saving ? "Procesando..." : tipoRegistro === "hospedar" ? "🏨 Confirmar y Hospedar" : "📋 Confirmar Reserva"}
+              </Button>
+            </div>
           </div>
         </div>
       )}
+      <ErrorToast message={error} onClose={() => setError("")} />
     </Dialog>
   )
 }

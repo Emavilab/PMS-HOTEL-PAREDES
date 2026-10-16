@@ -6,9 +6,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog } from "@/components/ui/dialog"
+import { ConfirmModal } from "@/components/ui/confirm-modal"
 import { AlertTriangle, CheckCircle2, Edit, Eye, History, Mail, Phone, Plus, Search, Trash2, User } from "lucide-react"
 import type { Huesped } from "@/types"
 import { formatCurrency, formatDateShort } from "@/lib/utils"
+import { ErrorToast } from "@/components/ui/error-toast"
 
 const initialForm = {
   nombres: "",
@@ -24,6 +26,7 @@ const initialForm = {
 }
 
 type ConfirmConfig = {
+  open: boolean
   title: string
   message: string
   confirmLabel: string
@@ -126,6 +129,7 @@ export default function HuespedesPage() {
 
     const fullName = `${form.nombres} ${form.apellidos}`.trim()
     setConfirm({
+      open: true,
       title: editingGuest ? "Confirmar cambios" : "Crear huesped",
       message: editingGuest ? `Se actualizaran los datos de ${fullName}.` : `Se registrara a ${fullName} como nuevo huesped.`,
       confirmLabel: editingGuest ? "Guardar cambios" : "Crear huesped",
@@ -158,6 +162,7 @@ export default function HuespedesPage() {
 
   function requestDelete(guest: Huesped) {
     setConfirm({
+      open: true,
       title: "Eliminar huesped",
       message: `Se intentara eliminar a ${guest.nombres} ${guest.apellidos}. Si tiene reservas asociadas, el sistema no permitira eliminarlo.`,
       confirmLabel: "Eliminar huesped",
@@ -197,7 +202,7 @@ export default function HuespedesPage() {
         <Button onClick={openCreate}><Plus className="mr-2 h-4 w-4" /> Nuevo huesped</Button>
       </div>
 
-      {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+      <ErrorToast message={error} onClose={() => setError("")} />
 
       <div className="grid gap-4 md:grid-cols-3">
         <SummaryCard title="Registrados" value={guests.length} text="Huespedes en la lista actual" />
@@ -359,7 +364,17 @@ export default function HuespedesPage() {
         )}
       </Dialog>
 
-      <ConfirmModal config={confirm} loading={saving} onCancel={() => setConfirm(null)} onConfirm={confirmAction} />
+      <ConfirmModal
+        open={confirm?.open ?? false}
+        onClose={() => setConfirm(null)}
+        title={confirm?.title || "Confirmar accion"}
+        message={confirm?.message || ""}
+        confirmLabel={confirm?.confirmLabel || "Confirmar"}
+        variant={confirm?.variant || "default"}
+        action={confirm?.action || (async () => {})}
+        loading={saving}
+        helperText="Revisa la información antes de continuar."
+      />
       <SuccessToast config={success} onClose={() => setSuccess(null)} />
     </div>
   )
@@ -404,39 +419,12 @@ function Info({ label, value }: { label: string; value: string }) {
   return <p><span className="font-medium text-gray-700">{label}:</span> <span className="text-gray-600">{value}</span></p>
 }
 
-function ConfirmModal({
-  config,
-  loading,
-  onCancel,
-  onConfirm,
-}: {
-  config: ConfirmConfig | null
-  loading: boolean
-  onCancel: () => void
-  onConfirm: () => void
-}) {
-  const destructive = config?.variant === "destructive"
-
+function DialogActions({ saving, onCancel }: { saving: boolean; onCancel: () => void }) {
   return (
-    <Dialog open={!!config} onClose={onCancel} title={config?.title || "Confirmar accion"} className="max-w-md">
-      <div className="space-y-5">
-        <div className="flex gap-4">
-          <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${destructive ? "bg-red-100 text-red-600" : "bg-blue-100 text-blue-600"}`}>
-            {destructive ? <AlertTriangle className="h-6 w-6" /> : <CheckCircle2 className="h-6 w-6" />}
-          </div>
-          <div>
-            <p className="text-sm leading-6 text-gray-600">{config?.message}</p>
-            <p className="mt-2 text-xs text-gray-500">Confirma para continuar con esta accion.</p>
-          </div>
-        </div>
-        <div className="flex justify-end gap-2 border-t pt-4">
-          <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>Cancelar</Button>
-          <Button type="button" variant={destructive ? "destructive" : "default"} onClick={onConfirm} disabled={loading}>
-            {loading ? "Procesando..." : config?.confirmLabel || "Confirmar"}
-          </Button>
-        </div>
-      </div>
-    </Dialog>
+    <div className="flex justify-end gap-2 pt-2">
+      <Button type="button" variant="outline" onClick={onCancel}>Cancelar</Button>
+      <Button type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar"}</Button>
+    </div>
   )
 }
 
