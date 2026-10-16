@@ -67,9 +67,9 @@ npm run dev
 
 | Rol | Correo | Contraseña |
 |-----|--------|-----------|
-| Administrador | admin@hotel.com | admin123 |
-| Gerente | gerente@hotel.com | gerente123 |
-| Recepcionista | recepcion@hotel.com | recepcion123 |
+| Administrador | admin@hotel.com | AdminHotel2026! |
+| Gerente | gerente@hotel.com | GerenteHotel2026! |
+| Recepcionista | recepcion@hotel.com | RecepcionHotel2026! |
 
 ## Docker Compose (producción local)
 
