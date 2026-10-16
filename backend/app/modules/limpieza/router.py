@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.dependencies import LimpiezaUsuario
+from app.core.dependencies import LimpiezaUsuario, LimpiezaModulo
 from app.common.auditoria import crear_registro_auditoria
 from app.modules.limpieza.modelos import TareaLimpieza
 from app.modules.limpieza.esquemas import (
@@ -27,7 +27,7 @@ _TRANSICIONES_VALIDAS = {
 }
 
 
-@router.get("/personal", response_model=list[dict])
+@router.get("/personal", response_model=list[dict], dependencies=[Depends(LimpiezaModulo)])
 def listar_personal_limpieza(
     db: Session = Depends(get_db),
     _: Usuario = Depends(LimpiezaUsuario),
@@ -42,7 +42,7 @@ def listar_personal_limpieza(
     return [{"id": u.id, "nombre_completo": u.nombre_completo} for u in personal]
 
 
-@router.get("", response_model=list[TareaLimpiezaResponse])
+@router.get("", response_model=list[TareaLimpiezaResponse], dependencies=[Depends(LimpiezaModulo)])
 def listar_tareas_limpieza(
     estado: str | None = Query(None),
     habitacion_id: str | None = Query(None),
@@ -68,7 +68,7 @@ def listar_tareas_limpieza(
     return [_tarea_response(t, db) for t in tareas]
 
 
-@router.post("", response_model=TareaLimpiezaResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=TareaLimpiezaResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(LimpiezaModulo)])
 def crear_tarea_limpieza(
     datos: TareaLimpiezaCrear,
     request: Request,
@@ -104,7 +104,7 @@ def crear_tarea_limpieza(
     return _tarea_response(tarea, db)
 
 
-@router.patch("/{tarea_id}", response_model=TareaLimpiezaResponse)
+@router.patch("/{tarea_id}", response_model=TareaLimpiezaResponse, dependencies=[Depends(LimpiezaModulo)])
 def actualizar_tarea_limpieza(
     tarea_id: str,
     datos: TareaLimpiezaActualizar,

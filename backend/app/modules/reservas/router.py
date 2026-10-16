@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, or_, func
 
 from app.core.database import get_db
-from app.core.dependencies import AdminUsuario, PersonalUsuario
+from app.core.dependencies import AdminUsuario, PersonalUsuario, ReservasModulo, HabitacionesModulo
 from app.common.auditoria import crear_registro_auditoria
 from app.modules.reservas.modelos import Reserva
 from app.modules.estadias.modelos import Estadia
@@ -120,7 +120,7 @@ def _recalcular_totales(db: Session, reserva: Reserva):
     reserva.total = max(round(subtotal_habitacion + float(cargos) + impuesto - descuento, 2), 0)
 
 
-@router.get("", response_model=ReservasPaginadasResponse)
+@router.get("", response_model=ReservasPaginadasResponse, dependencies=[Depends(ReservasModulo)])
 def listar_reservas(
     estado: str | None = Query(None),
     fecha_desde: date | None = Query(None),
@@ -179,7 +179,7 @@ def listar_reservas(
     )
 
 
-@router.post("", response_model=ReservaResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=ReservaResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(ReservasModulo)])
 def crear_reserva(
     datos: ReservaCrear,
     request: Request,
@@ -288,7 +288,7 @@ def crear_reserva(
     return ReservaResponse.model_validate(reserva)
 
 
-@router.get("/{reserva_id}", response_model=ReservaResponse)
+@router.get("/{reserva_id}", response_model=ReservaResponse, dependencies=[Depends(ReservasModulo)])
 def obtener_reserva(
     reserva_id: str,
     db: Session = Depends(get_db),
@@ -303,7 +303,7 @@ def obtener_reserva(
     return ReservaResponse.model_validate(reserva)
 
 
-@router.put("/{reserva_id}", response_model=ReservaResponse)
+@router.put("/{reserva_id}", response_model=ReservaResponse, dependencies=[Depends(ReservasModulo)])
 def actualizar_reserva(
     reserva_id: str,
     datos: ReservaActualizar,
@@ -390,7 +390,7 @@ def actualizar_reserva(
     return ReservaResponse.model_validate(reserva)
 
 
-@router.post("/{reserva_id}/confirmar", response_model=ReservaResponse)
+@router.post("/{reserva_id}/confirmar", response_model=ReservaResponse, dependencies=[Depends(ReservasModulo)])
 def confirmar_reserva(
     reserva_id: str,
     request: Request,
@@ -428,7 +428,7 @@ def confirmar_reserva(
     return ReservaResponse.model_validate(reserva)
 
 
-@router.post("/{reserva_id}/no-show", response_model=ReservaResponse)
+@router.post("/{reserva_id}/no-show", response_model=ReservaResponse, dependencies=[Depends(ReservasModulo)])
 def marcar_no_show(
     reserva_id: str,
     request: Request,
@@ -466,7 +466,7 @@ def marcar_no_show(
     return ReservaResponse.model_validate(reserva)
 
 
-@router.post("/{reserva_id}/cancelar", response_model=ReservaResponse)
+@router.post("/{reserva_id}/cancelar", response_model=ReservaResponse, dependencies=[Depends(ReservasModulo)])
 def cancelar_reserva(
     reserva_id: str,
     request: Request,
@@ -507,7 +507,7 @@ def cancelar_reserva(
     return ReservaResponse.model_validate(reserva)
 
 
-@router.delete("/{reserva_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{reserva_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(ReservasModulo)])
 def eliminar_reserva(
     reserva_id: str,
     request: Request,
@@ -558,7 +558,7 @@ def eliminar_reserva(
     db.commit()
 
 
-@router_disponibilidad.get("", response_model=DisponibilidadResponse)
+@router_disponibilidad.get("", response_model=DisponibilidadResponse, dependencies=[Depends(HabitacionesModulo)])
 def verificar_disponibilidad(
     fecha_entrada: date = Query(...),
     fecha_salida: date = Query(...),

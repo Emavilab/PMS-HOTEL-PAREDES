@@ -10,7 +10,7 @@ from sqlalchemy import func, cast, Date, and_, or_
 from io import BytesIO
 
 from app.core.database import get_db
-from app.core.dependencies import GerenteUsuario, PersonalUsuario
+from app.core.dependencies import GerenteUsuario, PersonalUsuario, ReportesModulo, DashboardModulo
 from app.common.exportar import exportar_excel, exportar_pdf
 from app.modules.reportes.esquemas import (
     ReporteOcupacion,
@@ -172,7 +172,7 @@ COLUMNAS_EJECUTIVO = [
 ]
 
 
-@router.get("/ocupacion", response_model=list[ReporteOcupacion])
+@router.get("/ocupacion", response_model=list[ReporteOcupacion], dependencies=[Depends(ReportesModulo)])
 def reporte_ocupacion(
     desde: date = Query(...),
     hasta: date = Query(...),
@@ -215,7 +215,7 @@ def reporte_ocupacion(
     return resultados
 
 
-@router.get("/exportar")
+@router.get("/exportar", dependencies=[Depends(ReportesModulo)])
 def exportar_reporte(
     tipo: str = Query(..., description="ocupacion | ingresos"),
     formato: str = Query("xlsx", description="xlsx | pdf"),
@@ -268,12 +268,12 @@ def exportar_reporte(
     )
 
 
-@router.get("/ingresos", response_model=ReporteIngresos)
+@router.get("/ingresos", response_model=ReporteIngresos, dependencies=[Depends(DashboardModulo)])
 def reporte_ingresos(
     desde: date = Query(...),
     hasta: date = Query(...),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(GerenteUsuario),
+    _: Usuario = Depends(PersonalUsuario),
 ):
     total_cargos = (
         db.query(func.coalesce(func.sum(Cargo.total), 0))
@@ -330,7 +330,7 @@ def reporte_ingresos(
     )
 
 
-@router.get("/llegadas", response_model=list[dict])
+@router.get("/llegadas", response_model=list[dict], dependencies=[Depends(DashboardModulo)])
 def llegadas_del_dia(
     fecha: date | None = Query(None),
     db: Session = Depends(get_db),
@@ -363,7 +363,7 @@ def llegadas_del_dia(
     return resultado
 
 
-@router.get("/notificaciones", response_model=list[dict])
+@router.get("/notificaciones", response_model=list[dict], dependencies=[Depends(DashboardModulo)])
 def notificaciones_operativas(
     db: Session = Depends(get_db),
     _: Usuario = Depends(PersonalUsuario),
@@ -404,19 +404,24 @@ def notificaciones_operativas(
     return sorted(notificaciones, key=lambda item: (orden[item["prioridad"]], item["fecha"]))[:100]
 
 
-@router.get("/salidas", response_model=list[dict])
+@router.get("/salidas", response_model=list[dict], dependencies=[Depends(DashboardModulo)])
 def salidas_del_dia(
     fecha: date | None = Query(None),
+    dias: int = Query(7, ge=1, le=30),
     db: Session = Depends(get_db),
     _: Usuario = Depends(PersonalUsuario),
 ):
-    dia = fecha or date.today()
+    """Devuelve salidas para el rango [fecha, fecha+dias). Por defecto: desde hoy hasta 7 días."""
+    inicio = fecha or date.today()
+    fin = inicio + timedelta(days=dias)
     reservas = (
         db.query(Reserva)
         .filter(
-            Reserva.fecha_salida == dia,
+            Reserva.fecha_salida >= inicio,
+            Reserva.fecha_salida < fin,
             Reserva.estado == "CHECKED_IN",
         )
+        .order_by(Reserva.fecha_salida)
         .all()
     )
     resultado = []
@@ -425,6 +430,7 @@ def salidas_del_dia(
         resultado.append(
             {
                 "id": r.id,
+                "reserva_id": r.id,
                 "codigo_confirmacion": r.codigo_confirmacion,
                 "huesped": nombre,
                 "fecha_entrada": str(r.fecha_entrada),
@@ -439,7 +445,7 @@ def salidas_del_dia(
 
 # ===== NUEVOS REPORTES FASE 2 =====
 
-@router.get("/cuentas-por-cobrar", response_model=ReporteCuentasPorCobrar)
+@router.get("/cuentas-por-cobrar", response_model=ReporteCuentasPorCobrar, dependencies=[Depends(ReportesModulo)])
 def reporte_cuentas_por_cobrar(
     hasta: date = Query(None),
     db: Session = Depends(get_db),
@@ -504,7 +510,7 @@ def reporte_cuentas_por_cobrar(
     )
 
 
-@router.get("/housekeeping", response_model=ReporteHousekeeping)
+@router.get("/housekeeping", response_model=ReporteHousekeeping, dependencies=[Depends(ReportesModulo)])
 def reporte_housekeeping(
     fecha: date = Query(None),
     db: Session = Depends(get_db),
@@ -574,7 +580,7 @@ def reporte_housekeeping(
     )
 
 
-@router.get("/ingresos-detallado", response_model=ReporteIngresosDetallado)
+@router.get("/ingresos-detallado", response_model=ReporteIngresosDetallado, dependencies=[Depends(ReportesModulo)])
 def reporte_ingresos_detallado(
     desde: date = Query(...),
     hasta: date = Query(...),
@@ -656,7 +662,7 @@ def reporte_ingresos_detallado(
     )
 
 
-@router.get("/forecast", response_model=ReporteForecast)
+@router.get("/forecast", response_model=ReporteForecast, dependencies=[Depends(ReportesModulo)])
 def reporte_forecast(
     desde: date = Query(...),
     hasta: date = Query(...),
@@ -702,7 +708,7 @@ def reporte_forecast(
 
 # ===== FASE 3: CUMPLIMIENTO Y EJECUTIVO =====
 
-@router.get("/ventas", response_model=ReporteVentas)
+@router.get("/ventas", response_model=ReporteVentas, dependencies=[Depends(ReportesModulo)])
 def reporte_ventas(
     desde: date = Query(...),
     hasta: date = Query(...),
@@ -763,7 +769,7 @@ def reporte_ventas(
         items=items,
     )
 
-@router.get("/libro-huespedes", response_model=ReporteLibroHuespedes)
+@router.get("/libro-huespedes", response_model=ReporteLibroHuespedes, dependencies=[Depends(ReportesModulo)])
 def reporte_libro_huespedes(
     desde: date = Query(...),
     hasta: date = Query(...),
@@ -811,7 +817,7 @@ def reporte_libro_huespedes(
     )
 
 
-@router.get("/impuestos-turisticos", response_model=ReporteImpuestosTuristicos)
+@router.get("/impuestos-turisticos", response_model=ReporteImpuestosTuristicos, dependencies=[Depends(ReportesModulo)])
 def reporte_impuestos_turisticos(
     desde: date = Query(...),
     hasta: date = Query(...),
@@ -867,7 +873,7 @@ def reporte_impuestos_turisticos(
     )
 
 
-@router.get("/conciliacion-caja", response_model=ReporteConciliacionCaja)
+@router.get("/conciliacion-caja", response_model=ReporteConciliacionCaja, dependencies=[Depends(ReportesModulo)])
 def reporte_conciliacion_caja(
     desde: date = Query(...),
     hasta: date = Query(...),
@@ -917,7 +923,7 @@ def reporte_conciliacion_caja(
     )
 
 
-@router.get("/ejecutivo", response_model=ReporteEjecutivo)
+@router.get("/ejecutivo", response_model=ReporteEjecutivo, dependencies=[Depends(ReportesModulo)])
 def reporte_ejecutivo(
     desde: date = Query(...),
     hasta: date = Query(...),
@@ -1201,7 +1207,7 @@ def _escribir_hoja_excel(ws, datos, columnas, titulo):
     ws.auto_filter.ref = f"A2:{ws.cell(row=2, column=len(columnas)).coordinate}"
 
 
-@router.get("/exportar")
+@router.get("/exportar", dependencies=[Depends(ReportesModulo)])
 def exportar_reporte(
     tipo: str = Query(...),
     formato: str = Query("xlsx"),
