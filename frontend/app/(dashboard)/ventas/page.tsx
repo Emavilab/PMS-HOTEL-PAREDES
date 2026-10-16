@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Badge, statusBadge } from "@/components/ui/badge"
 import { Dialog } from "@/components/ui/dialog"
 import { formatCurrency } from "@/lib/utils"
+import { ErrorToast } from "@/components/ui/error-toast"
 import { ShoppingCart, Package, Plus, Minus, Trash2, Check, UserRound, BedDouble, Banknote, CreditCard, Wallet, Search } from "lucide-react"
 
 type Tab = "vender" | "productos"
@@ -64,6 +65,12 @@ function VenderTab() {
   const [busquedaHabitacion, setBusquedaHabitacion] = useState("")
   const [pagarAhora, setPagarAhora] = useState(false)
   const [ventaHabitacionAbierta, setVentaHabitacionAbierta] = useState(false)
+
+  useEffect(() => {
+    if (!success) return
+    const timer = window.setTimeout(() => setSuccess(""), 3200)
+    return () => window.clearTimeout(timer)
+  }, [success])
 
   const loadData = useCallback(() => {
     setLoading(true)
@@ -247,7 +254,7 @@ function VenderTab() {
 
               {carrito.length > 0 && <div className="space-y-2 border-t pt-3"><p className="text-sm font-medium">Forma de pago</p><div className="grid grid-cols-3 gap-2">{["Efectivo", "Tarjeta", "Transferencia"].map((metodo) => <button key={metodo} onClick={() => setMetodoPago(metodo)} className={`flex flex-col items-center gap-1 rounded-md border p-2 text-xs ${metodoPago === metodo ? "border-blue-600 bg-blue-50 text-blue-700" : "border-gray-200"}`}>{metodo === "Efectivo" ? <Banknote className="h-5 w-5" /> : metodo === "Tarjeta" ? <CreditCard className="h-5 w-5" /> : <Wallet className="h-5 w-5" />}{metodo}</button>)}</div>{esEfectivo && <><Input type="number" min={totalCarrito} step="0.01" value={efectivoRecibido} onChange={(e) => setEfectivoRecibido(e.target.value)} placeholder="Dinero recibido" />{efectivoRecibido && Number(efectivoRecibido) >= totalCarrito && <p className="text-sm font-medium text-green-700">Cambio: {formatCurrency(Number(efectivoRecibido) - totalCarrito)}</p>}</>}</div>}
 
-              {error && <p className="text-sm text-red-600">{error}</p>}
+              {error && <p className="instant-error text-sm text-red-600">{error}</p>}
               {success && <p className="text-sm text-green-600">{success}</p>}
 
               <Button className="w-full" onClick={handleVender} disabled={carrito.length === 0 || saving}>
@@ -269,7 +276,7 @@ function VenderTab() {
           <div className="grid grid-cols-2 gap-2"><button onClick={() => setPagarAhora(false)} className={`rounded-md border p-2 text-sm ${!pagarAhora ? "border-blue-600 bg-blue-50 text-blue-700" : "border-gray-200"}`}>Cargar a cuenta</button><button onClick={() => setPagarAhora(true)} className={`rounded-md border p-2 text-sm ${pagarAhora ? "border-green-600 bg-green-50 text-green-700" : "border-gray-200"}`}>Pagar al momento</button></div>
           {carrito.length === 0 ? <p className="text-sm text-gray-500">Selecciona productos para agregarlos al consumo.</p> : <div className="space-y-2">{carrito.map((c) => <div key={c.producto.id} className="flex items-center justify-between gap-2 rounded-md bg-gray-50 p-2 text-sm"><span className="min-w-0 truncate">{c.cantidad} x {c.producto.nombre}</span><span className="flex items-center gap-2"><strong>{formatCurrency(c.producto.precio_unitario * c.cantidad)}</strong><button onClick={() => removeFromCart(c.producto.id, false)} className="text-red-500" title="Quitar producto"><Minus className="h-4 w-4" /></button></span></div>)}<div className="border-t pt-2 text-right text-lg font-bold">{formatCurrency(totalCarrito)}</div></div>}
           {pagarAhora && carrito.length > 0 && <div className="space-y-2"><p className="text-sm font-medium">Forma de pago</p><div className="grid grid-cols-3 gap-2">{["Efectivo", "Tarjeta", "Transferencia"].map((metodo) => <button key={metodo} onClick={() => setMetodoPago(metodo)} className={`rounded-md border p-2 text-xs ${metodoPago === metodo ? "border-blue-600 bg-blue-50 text-blue-700" : "border-gray-200"}`}>{metodo}</button>)}</div>{esEfectivo && <Input type="number" min={totalCarrito} step="0.01" value={efectivoRecibido} onChange={(e) => setEfectivoRecibido(e.target.value)} placeholder="Dinero recibido" />}</div>}
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="instant-error text-sm text-red-600">{error}</p>}
           <Button className="w-full" onClick={handleVender} disabled={carrito.length === 0 || saving}>{saving ? "Procesando..." : pagarAhora ? "Cobrar y registrar consumo" : "Registrar consumo"}</Button>
         </div>
       </div>}
@@ -347,11 +354,11 @@ function ProductosTab() {
         <Button size="sm" onClick={openNew}><Plus className="h-4 w-4 mr-1" /> Nuevo Producto</Button>
       </div>
 
-      {error && <div className="p-3 text-sm bg-red-50 text-red-600 rounded-md border border-red-200">{error}</div>}
+      <ErrorToast message={error} onClose={() => setError("")} />
 
       <Dialog open={showForm} onClose={() => setShowForm(false)} title={editId ? "Editar Producto" : "Nuevo Producto"}>
         <div className="space-y-3">
-          {error && <div className="p-3 text-sm bg-red-50 text-red-600 rounded-md border border-red-200">{error}</div>}
+          {error && <div className="instant-error p-3 text-sm bg-red-50 text-red-600 rounded-md border border-red-200">{error}</div>}
           <div className="space-y-1">
             <label className="text-sm font-medium">Nombre *</label>
             <Input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} />

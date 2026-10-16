@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.core.database import get_db
-from app.core.dependencies import PersonalUsuario, AdminUsuario
+from app.core.dependencies import PersonalUsuario, AdminUsuario, VentasModulo
 from app.common.auditoria import crear_registro_auditoria
 from app.modules.ventas.modelos import Producto, Consumo, VentaParticular, CategoriaProducto
 from app.modules.ventas.esquemas import (
@@ -26,7 +26,7 @@ from app.modules.usuarios.modelos import Usuario
 router = APIRouter(prefix="/ventas", tags=["Ventas"])
 
 
-@router.get("/categorias", response_model=list[CategoriaProductoResponse])
+@router.get("/categorias", response_model=list[CategoriaProductoResponse], dependencies=[Depends(VentasModulo)])
 def listar_categorias_productos(
     db: Session = Depends(get_db),
     _: Usuario = Depends(PersonalUsuario),
@@ -34,7 +34,7 @@ def listar_categorias_productos(
     return db.query(CategoriaProducto).filter(CategoriaProducto.activo == True).order_by(CategoriaProducto.nombre).all()
 
 
-@router.get("/categorias/todas", response_model=list[CategoriaProductoResponse])
+@router.get("/categorias/todas", response_model=list[CategoriaProductoResponse], dependencies=[Depends(VentasModulo)])
 def listar_todas_categorias_productos(
     db: Session = Depends(get_db),
     usuario_actual: Usuario = Depends(AdminUsuario),
@@ -42,7 +42,7 @@ def listar_todas_categorias_productos(
     return db.query(CategoriaProducto).order_by(CategoriaProducto.nombre).all()
 
 
-@router.post("/categorias", response_model=CategoriaProductoResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/categorias", response_model=CategoriaProductoResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(VentasModulo)])
 def crear_categoria_producto(
     datos: CategoriaProductoCrear,
     db: Session = Depends(get_db),
@@ -59,7 +59,7 @@ def crear_categoria_producto(
     return categoria
 
 
-@router.put("/categorias/{categoria_id}", response_model=CategoriaProductoResponse)
+@router.put("/categorias/{categoria_id}", response_model=CategoriaProductoResponse, dependencies=[Depends(VentasModulo)])
 def actualizar_categoria_producto(
     categoria_id: str,
     datos: CategoriaProductoActualizar,
@@ -84,7 +84,7 @@ def actualizar_categoria_producto(
     return categoria
 
 
-@router.delete("/categorias/{categoria_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/categorias/{categoria_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(VentasModulo)])
 def eliminar_categoria_producto(
     categoria_id: str,
     db: Session = Depends(get_db),
@@ -98,7 +98,7 @@ def eliminar_categoria_producto(
     crear_registro_auditoria(db, usuario_actual.id, "DESACTIVAR", "CATEGORIA_PRODUCTO", categoria.id, {"activo": True}, {"activo": False})
 
 
-@router.post("/particulares", response_model=VentaParticularResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/particulares", response_model=VentaParticularResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(VentasModulo)])
 def crear_venta_particular(
     datos: VentaParticularCrear,
     db: Session = Depends(get_db),
@@ -162,7 +162,7 @@ def crear_venta_particular(
     }
 
 
-@router.get("/productos", response_model=list[ProductoResponse])
+@router.get("/productos", response_model=list[ProductoResponse], dependencies=[Depends(VentasModulo)])
 def listar_productos(
     categoria: Optional[str] = Query(None),
     db: Session = Depends(get_db),
@@ -174,7 +174,7 @@ def listar_productos(
     return consulta.order_by(Producto.nombre).all()
 
 
-@router.post("/productos", response_model=ProductoResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/productos", response_model=ProductoResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(VentasModulo)])
 def crear_producto(
     datos: ProductoCrear,
     db: Session = Depends(get_db),
@@ -188,7 +188,7 @@ def crear_producto(
     return producto
 
 
-@router.put("/productos/{producto_id}", response_model=ProductoResponse)
+@router.put("/productos/{producto_id}", response_model=ProductoResponse, dependencies=[Depends(VentasModulo)])
 def actualizar_producto(
     producto_id: str,
     datos: ProductoActualizar,
@@ -208,7 +208,7 @@ def actualizar_producto(
     return producto
 
 
-@router.delete("/productos/{producto_id}", status_code=204)
+@router.delete("/productos/{producto_id}", status_code=204, dependencies=[Depends(VentasModulo)])
 def eliminar_producto(
     producto_id: str,
     db: Session = Depends(get_db),
@@ -222,7 +222,7 @@ def eliminar_producto(
     crear_registro_auditoria(db, usuario_actual.id, "DESACTIVAR", "PRODUCTO", producto.id, {"estado": "activo"}, {"estado": "inactivo"})
 
 
-@router.get("/ocupadas", response_model=list[dict])
+@router.get("/ocupadas", response_model=list[dict], dependencies=[Depends(VentasModulo)])
 def habitaciones_ocupadas(
     db: Session = Depends(get_db),
     _: Usuario = Depends(PersonalUsuario),
@@ -256,7 +256,7 @@ def habitaciones_ocupadas(
     return resultado
 
 
-@router.get("/habitaciones/{habitacion_id}/ocupacion", response_model=dict)
+@router.get("/habitaciones/{habitacion_id}/ocupacion", response_model=dict, dependencies=[Depends(VentasModulo)])
 def detalle_ocupacion_habitacion(
     habitacion_id: str,
     db: Session = Depends(get_db),
@@ -309,7 +309,7 @@ def detalle_ocupacion_habitacion(
     }
 
 
-@router.post("/reservas/{reserva_id}/consumos", response_model=list[ConsumoResponse], status_code=201)
+@router.post("/reservas/{reserva_id}/consumos", response_model=list[ConsumoResponse], status_code=201, dependencies=[Depends(VentasModulo)])
 def agregar_consumos(
     reserva_id: str,
     datos: list[ConsumoCrear],
@@ -388,7 +388,7 @@ def agregar_consumos(
     ]
 
 
-@router.get("/reservas/{reserva_id}/consumos", response_model=list[ConsumoResponse])
+@router.get("/reservas/{reserva_id}/consumos", response_model=list[ConsumoResponse], dependencies=[Depends(VentasModulo)])
 def listar_consumos(
     reserva_id: str,
     db: Session = Depends(get_db),
@@ -411,7 +411,7 @@ def listar_consumos(
     ]
 
 
-@router.get("/reservas/{reserva_id}/verificar-salida", response_model=VerificacionSalidaResponse)
+@router.get("/reservas/{reserva_id}/verificar-salida", response_model=VerificacionSalidaResponse, dependencies=[Depends(VentasModulo)])
 def verificar_salida(
     reserva_id: str,
     db: Session = Depends(get_db),
@@ -481,7 +481,7 @@ def verificar_salida(
     )
 
 
-@router.post("/reservas/{reserva_id}/culminar-salida")
+@router.post("/reservas/{reserva_id}/culminar-salida", dependencies=[Depends(VentasModulo)])
 def culminar_salida(
     reserva_id: str,
     metodo_pago: str = Query(...),
@@ -641,6 +641,26 @@ def culminar_salida(
     db.commit()
     db.refresh(factura_db)
     factura["id"] = factura_db.id
+
+    crear_registro_auditoria(
+        db=db,
+        usuario_id=usuario_actual.id,
+        accion="CULMINAR_SALIDA",
+        tipo_entidad="RESERVA",
+        entidad_id=reserva.id,
+        valores_anteriores={"estado": "CHECKED_IN"},
+        valores_nuevos={
+            "estado": "CHECKED_OUT",
+            "factura_id": factura_db.id,
+            "factura_numero": factura_db.numero,
+            "metodo_pago": metodo_pago,
+            "total_factura": float(total_factura),
+            "total_pagado": float(total_pagado),
+            "saldo_final": float(saldo_final),
+            "mora_penalidad": float(mora),
+            "consumos_cobrados": float(total_consumos_pendientes),
+        },
+    )
 
     return {
         "mensaje": "Salida culminada exitosamente",

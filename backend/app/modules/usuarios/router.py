@@ -1,11 +1,12 @@
 import json
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-import bcrypt
 
 from app.core.database import get_db
-from app.core.dependencies import AdminUsuario, GerenteUsuario
+from app.core.dependencies import AdminUsuario, GerenteUsuario, UsuariosModulo
+from app.core.seguridad import hash_password, obtener_usuario_actual
 from app.common.auditoria import crear_registro_auditoria
 from app.modules.usuarios.modelos import Usuario
 from app.modules.usuarios.esquemas import (
@@ -15,12 +16,9 @@ from app.modules.usuarios.esquemas import (
 )
 
 router = APIRouter(prefix="/usuarios", tags=["Usuarios"])
+UMBRAL_ACTIVIDAD = timedelta(seconds=90)
 
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-
-
-@router.get("", response_model=list[UsuarioResponse])
+@router.get("", response_model=list[UsuarioResponse], dependencies=[Depends(UsuariosModulo)])
 def listar_usuarios(
     db: Session = Depends(get_db),
     usuario_actual: Usuario = Depends(GerenteUsuario),
@@ -29,7 +27,35 @@ def listar_usuarios(
     return [UsuarioResponse.model_validate(u) for u in usuarios]
 
 
-@router.post("", response_model=UsuarioResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/actividad", status_code=status.HTTP_204_NO_CONTENT)
+def registrar_actividad(
+    db: Session = Depends(get_db),
+    usuario_actual: Usuario = Depends(obtener_usuario_actual),
+):
+    usuario_actual.ultima_actividad = datetime.now(timezone.utc)
+    db.commit()
+
+
+@router.get("/activos", dependencies=[Depends(UsuariosModulo)])
+def listar_usuarios_activos(
+    db: Session = Depends(get_db),
+    usuario_actual: Usuario = Depends(GerenteUsuario),
+):
+    limite = datetime.now(timezone.utc) - UMBRAL_ACTIVIDAD
+    usuarios = db.query(Usuario).filter(
+        Usuario.estado == "activo", Usuario.ultima_actividad.isnot(None),
+        Usuario.ultima_actividad >= limite,
+    ).order_by(Usuario.ultima_actividad.desc()).all()
+    return [{
+        "id": usuario.id,
+        "usuario": usuario.usuario,
+        "nombre_completo": usuario.nombre_completo,
+        "rol": usuario.rol,
+        "ultima_actividad": usuario.ultima_actividad,
+    } for usuario in usuarios]
+
+
+@router.post("", response_model=UsuarioResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(UsuariosModulo)])
 def crear_usuario(
     datos: UsuarioCrear,
     request: Request,
@@ -73,7 +99,7 @@ def crear_usuario(
     return UsuarioResponse.model_validate(usuario)
 
 
-@router.get("/{usuario_id}", response_model=UsuarioResponse)
+@router.get("/{usuario_id}", response_model=UsuarioResponse, dependencies=[Depends(UsuariosModulo)])
 def obtener_usuario(
     usuario_id: str,
     db: Session = Depends(get_db),
@@ -88,7 +114,7 @@ def obtener_usuario(
     return UsuarioResponse.model_validate(usuario)
 
 
-@router.put("/{usuario_id}", response_model=UsuarioResponse)
+@router.put("/{usuario_id}", response_model=UsuarioResponse, dependencies=[Depends(UsuariosModulo)])
 def actualizar_usuario(
     usuario_id: str,
     datos: UsuarioActualizar,
@@ -182,7 +208,7 @@ def actualizar_usuario(
     return UsuarioResponse.model_validate(usuario)
 
 
-@router.delete("/{usuario_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{usuario_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(UsuariosModulo)])
 def eliminar_usuario(
     usuario_id: str,
     request: Request,
