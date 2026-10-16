@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.core.database import get_db
-from app.core.dependencies import PersonalUsuario
+from app.core.dependencies import PersonalUsuario, FacturacionModulo
 from app.common.auditoria import crear_registro_auditoria
 from app.modules.facturacion.modelos import Cargo, Pago, Factura
 from app.modules.facturacion.esquemas import (
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/reservas", tags=["Facturacion"])
 router_facturas = APIRouter(prefix="/facturas", tags=["Facturas"])
 
 
-@router_facturas.get("", response_model=list[dict])
+@router_facturas.get("", response_model=list[dict], dependencies=[Depends(FacturacionModulo)])
 def listar_facturas(
     db: Session = Depends(get_db),
     _: Usuario = Depends(PersonalUsuario),
@@ -44,7 +44,7 @@ def listar_facturas(
     return resultado
 
 
-@router_facturas.get("/{factura_id}", response_model=dict)
+@router_facturas.get("/{factura_id}", response_model=dict, dependencies=[Depends(FacturacionModulo)])
 def obtener_factura(
     factura_id: str,
     db: Session = Depends(get_db),
@@ -69,7 +69,7 @@ def obtener_factura(
     }
 
 
-@router.post("/{reserva_id}/cargos", response_model=CargoResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/{reserva_id}/cargos", response_model=CargoResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(FacturacionModulo)])
 def agregar_cargo(
     reserva_id: str,
     datos: CargoCrear,
@@ -120,7 +120,7 @@ def agregar_cargo(
     return CargoResponse.model_validate(cargo)
 
 
-@router.get("/{reserva_id}/cargos", response_model=list[CargoResponse])
+@router.get("/{reserva_id}/cargos", response_model=list[CargoResponse], dependencies=[Depends(FacturacionModulo)])
 def listar_cargos(
     reserva_id: str,
     db: Session = Depends(get_db),
@@ -141,7 +141,7 @@ def listar_cargos(
     return [CargoResponse.model_validate(c) for c in cargos]
 
 
-@router.post("/{reserva_id}/pagos", response_model=PagoResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/{reserva_id}/pagos", response_model=PagoResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(FacturacionModulo)])
 def registrar_pago(
     reserva_id: str,
     datos: PagoCrear,
@@ -198,7 +198,7 @@ def registrar_pago(
     return PagoResponse.model_validate(pago)
 
 
-@router.get("/{reserva_id}/pagos", response_model=list[PagoResponse])
+@router.get("/{reserva_id}/pagos", response_model=list[PagoResponse], dependencies=[Depends(FacturacionModulo)])
 def listar_pagos(
     reserva_id: str,
     db: Session = Depends(get_db),
@@ -219,7 +219,7 @@ def listar_pagos(
     return [PagoResponse.model_validate(p) for p in pagos]
 
 
-@router.get("/{reserva_id}/folio", response_model=FolioResponse)
+@router.get("/{reserva_id}/folio", response_model=FolioResponse, dependencies=[Depends(FacturacionModulo)])
 def obtener_folio(
     reserva_id: str,
     db: Session = Depends(get_db),

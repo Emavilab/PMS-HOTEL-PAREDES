@@ -3,7 +3,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.dependencies import AdminUsuario, LimpiezaUsuario, PersonalUsuario
+from app.core.dependencies import AdminUsuario, LimpiezaUsuario, PersonalUsuario, HabitacionesModulo, FacturacionModulo
 from app.common.auditoria import crear_registro_auditoria
 from app.modules.habitaciones.modelos import MetodoPago, TipoHabitacion, Habitacion, Piso
 from app.modules.habitaciones.esquemas import (
@@ -49,7 +49,7 @@ def _habitacion_response(habitacion: Habitacion) -> HabitacionResponse:
     )
 
 
-@router_tipos.get("", response_model=list[TipoHabitacionResponse])
+@router_tipos.get("", response_model=list[TipoHabitacionResponse], dependencies=[Depends(HabitacionesModulo)])
 def listar_tipos_habitacion(
     db: Session = Depends(get_db),
     _: Usuario = Depends(LimpiezaUsuario),
@@ -58,7 +58,7 @@ def listar_tipos_habitacion(
     return [TipoHabitacionResponse.model_validate(t) for t in tipos]
 
 
-@router_tipos.post("", response_model=TipoHabitacionResponse, status_code=status.HTTP_201_CREATED)
+@router_tipos.post("", response_model=TipoHabitacionResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(HabitacionesModulo)])
 def crear_tipo_habitacion(
     datos: TipoHabitacionCrear,
     request: Request,
@@ -90,7 +90,7 @@ def crear_tipo_habitacion(
     return TipoHabitacionResponse.model_validate(tipo)
 
 
-@router_tipos.put("/{tipo_id}", response_model=TipoHabitacionResponse)
+@router_tipos.put("/{tipo_id}", response_model=TipoHabitacionResponse, dependencies=[Depends(HabitacionesModulo)])
 def actualizar_tipo_habitacion(
     tipo_id: str,
     datos: TipoHabitacionActualizar,
@@ -142,7 +142,7 @@ def actualizar_tipo_habitacion(
     return TipoHabitacionResponse.model_validate(tipo)
 
 
-@router_tipos.delete("/{tipo_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router_tipos.delete("/{tipo_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(HabitacionesModulo)])
 def eliminar_tipo_habitacion(
     tipo_id: str,
     request: Request,
@@ -183,7 +183,7 @@ def eliminar_tipo_habitacion(
     )
 
 
-@router_habitaciones.get("", response_model=list[HabitacionResponse])
+@router_habitaciones.get("", response_model=list[HabitacionResponse], dependencies=[Depends(HabitacionesModulo)])
 def listar_habitaciones(
     db: Session = Depends(get_db),
     _: Usuario = Depends(LimpiezaUsuario),
@@ -199,7 +199,7 @@ def listar_habitaciones(
     return resultado
 
 
-@router_habitaciones.post("", response_model=HabitacionResponse, status_code=status.HTTP_201_CREATED)
+@router_habitaciones.post("", response_model=HabitacionResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(HabitacionesModulo)])
 def crear_habitacion(
     datos: HabitacionCrear,
     request: Request,
@@ -250,7 +250,7 @@ def crear_habitacion(
     return _habitacion_response(habitacion)
 
 
-@router_habitaciones.put("/{habitacion_id}", response_model=HabitacionResponse)
+@router_habitaciones.put("/{habitacion_id}", response_model=HabitacionResponse, dependencies=[Depends(HabitacionesModulo)])
 def actualizar_habitacion(
     habitacion_id: str,
     datos: HabitacionActualizar,
@@ -326,7 +326,7 @@ def actualizar_habitacion(
     return _habitacion_response(habitacion)
 
 
-@router_habitaciones.delete("/{habitacion_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router_habitaciones.delete("/{habitacion_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(HabitacionesModulo)])
 def eliminar_habitacion(
     habitacion_id: str,
     request: Request,
@@ -369,12 +369,13 @@ def eliminar_habitacion(
     )
 
 
-@router_habitaciones.patch("/{habitacion_id}/estado", response_model=HabitacionResponse)
+@router_habitaciones.patch("/{habitacion_id}/estado", response_model=HabitacionResponse, dependencies=[Depends(HabitacionesModulo)])
 def actualizar_estado_habitacion(
     habitacion_id: str,
     datos: HabitacionEstadoActualizar,
+    request: Request,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(PersonalUsuario),
+    usuario_actual: Usuario = Depends(PersonalUsuario),
 ):
     habitacion = db.query(Habitacion).filter(Habitacion.id == habitacion_id).first()
     if not habitacion:
@@ -383,6 +384,11 @@ def actualizar_estado_habitacion(
             detail="Habitacion no encontrada",
         )
 
+    valores_anteriores = {
+        "estado_operativo": habitacion.estado_operativo,
+        "estado_limpieza": habitacion.estado_limpieza,
+        "notas": habitacion.notas,
+    }
     datos_actualizar = datos.model_dump(exclude_unset=True)
     for campo, valor in datos_actualizar.items():
         setattr(habitacion, campo, valor)
@@ -390,12 +396,27 @@ def actualizar_estado_habitacion(
     db.commit()
     db.refresh(habitacion)
 
+    crear_registro_auditoria(
+        db=db,
+        usuario_id=usuario_actual.id,
+        accion="ACTUALIZAR_ESTADO",
+        tipo_entidad="HABITACION",
+        entidad_id=habitacion.id,
+        valores_anteriores=valores_anteriores,
+        valores_nuevos={
+            "estado_operativo": habitacion.estado_operativo,
+            "estado_limpieza": habitacion.estado_limpieza,
+            "notas": habitacion.notas,
+        },
+        direccion_ip=request.client.host if request.client else None,
+    )
+
     return _habitacion_response(habitacion)
 
 
 # --- Piso CRUD Routes ---
 
-@router_pisos.get("", response_model=list[PisoResponse])
+@router_pisos.get("", response_model=list[PisoResponse], dependencies=[Depends(HabitacionesModulo)])
 def listar_pisos(
     db: Session = Depends(get_db),
     _: Usuario = Depends(PersonalUsuario),
@@ -404,7 +425,7 @@ def listar_pisos(
     return [PisoResponse.model_validate(p) for p in pisos]
 
 
-@router_pisos.post("", response_model=PisoResponse, status_code=status.HTTP_201_CREATED)
+@router_pisos.post("", response_model=PisoResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(HabitacionesModulo)])
 def crear_piso(
     datos: PisoCrear,
     request: Request,
@@ -436,7 +457,7 @@ def crear_piso(
     return PisoResponse.model_validate(piso)
 
 
-@router_pisos.put("/{piso_id}", response_model=PisoResponse)
+@router_pisos.put("/{piso_id}", response_model=PisoResponse, dependencies=[Depends(HabitacionesModulo)])
 def actualizar_piso(
     piso_id: str,
     datos: PisoActualizar,
@@ -487,7 +508,7 @@ def actualizar_piso(
     return PisoResponse.model_validate(piso)
 
 
-@router_pisos.delete("/{piso_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router_pisos.delete("/{piso_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(HabitacionesModulo)])
 def eliminar_piso(
     piso_id: str,
     request: Request,
@@ -527,7 +548,7 @@ def eliminar_piso(
     )
 
 
-@router_pagos.get("", response_model=list[MetodoPagoResponse])
+@router_pagos.get("", response_model=list[MetodoPagoResponse], dependencies=[Depends(FacturacionModulo)])
 def listar_metodos_pago(
     db: Session = Depends(get_db),
     _: Usuario = Depends(PersonalUsuario),
@@ -536,7 +557,7 @@ def listar_metodos_pago(
     return [MetodoPagoResponse.model_validate(m) for m in metodos]
 
 
-@router_pagos.post("", response_model=MetodoPagoResponse, status_code=status.HTTP_201_CREATED)
+@router_pagos.post("", response_model=MetodoPagoResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(FacturacionModulo)])
 def crear_metodo_pago(
     datos: MetodoPagoCrear,
     request: Request,
@@ -568,7 +589,7 @@ def crear_metodo_pago(
     return MetodoPagoResponse.model_validate(metodo)
 
 
-@router_pagos.put("/{metodo_id}", response_model=MetodoPagoResponse)
+@router_pagos.put("/{metodo_id}", response_model=MetodoPagoResponse, dependencies=[Depends(FacturacionModulo)])
 def actualizar_metodo_pago(
     metodo_id: str,
     datos: MetodoPagoActualizar,
@@ -619,7 +640,7 @@ def actualizar_metodo_pago(
     return MetodoPagoResponse.model_validate(metodo)
 
 
-@router_pagos.delete("/{metodo_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router_pagos.delete("/{metodo_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(FacturacionModulo)])
 def eliminar_metodo_pago(
     metodo_id: str,
     request: Request,
