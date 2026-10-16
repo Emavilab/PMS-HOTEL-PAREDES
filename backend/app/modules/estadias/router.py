@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.dependencies import PersonalUsuario
+from app.core.dependencies import PersonalUsuario, ReservasModulo
 from app.common.auditoria import crear_registro_auditoria
 from app.modules.estadias.modelos import Estadia
 from app.modules.estadias.esquemas import (
@@ -23,7 +23,7 @@ from app.modules.usuarios.modelos import Usuario
 router = APIRouter(prefix="/reservas", tags=["Estadias"])
 
 
-@router.post("/{reserva_id}/extender-estadia", response_model=EstadiaResponse)
+@router.post("/{reserva_id}/extender-estadia", response_model=EstadiaResponse, dependencies=[Depends(ReservasModulo)])
 def extender_estadia(
     reserva_id: str,
     datos: ExtensionEstadiaRequest,
@@ -124,7 +124,7 @@ def extender_estadia(
     })
 
 
-@router.post("/{reserva_id}/check-in", response_model=EstadiaResponse)
+@router.post("/{reserva_id}/check-in", response_model=EstadiaResponse, dependencies=[Depends(ReservasModulo)])
 def realizar_check_in(
     reserva_id: str,
     datos: CheckInRequest,
@@ -193,7 +193,7 @@ def realizar_check_in(
     )
 
     return EstadiaResponse.model_validate(estadia)
-@router.post("/{reserva_id}/check-out", response_model=EstadiaResponse)
+@router.post("/{reserva_id}/check-out", response_model=EstadiaResponse, dependencies=[Depends(ReservasModulo)])
 def realizar_check_out(
     reserva_id: str,
     request: Request,

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.dependencies import AdminUsuario
+from app.core.dependencies import AdminUsuario, ConfiguracionModulo
 from app.common.auditoria import crear_registro_auditoria
 from app.modules.configuracion.modelos import HotelConfig
 from app.modules.configuracion.esquemas import ConfigCrear, ConfigActualizar, ConfigResponse
@@ -34,7 +34,7 @@ def obtener_config(db: Session = Depends(get_db)):
     return _obtener_o_crear_config(db)
 
 
-@router.put("", response_model=ConfigResponse)
+@router.put("", response_model=ConfigResponse, dependencies=[Depends(ConfiguracionModulo)])
 def actualizar_config(
     datos: ConfigActualizar,
     db: Session = Depends(get_db),
@@ -50,7 +50,7 @@ def actualizar_config(
     return config
 
 
-@router.post("/logo", response_model=ConfigResponse)
+@router.post("/logo", response_model=ConfigResponse, dependencies=[Depends(ConfiguracionModulo)])
 def subir_logo(
     archivo: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -69,7 +69,7 @@ def subir_logo(
     return config
 
 
-@router.delete("/logo", response_model=ConfigResponse)
+@router.delete("/logo", response_model=ConfigResponse, dependencies=[Depends(ConfiguracionModulo)])
 def eliminar_logo(
     db: Session = Depends(get_db),
     usuario_actual: Usuario = Depends(AdminUsuario),
@@ -87,7 +87,7 @@ def eliminar_logo(
     return config
 
 
-@router.post("/fondo-login", response_model=ConfigResponse)
+@router.post("/fondo-login", response_model=ConfigResponse, dependencies=[Depends(ConfiguracionModulo)])
 def subir_fondo_login(
     archivo: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -110,7 +110,7 @@ def subir_fondo_login(
     return config
 
 
-@router.delete("/fondo-login", response_model=ConfigResponse)
+@router.delete("/fondo-login", response_model=ConfigResponse, dependencies=[Depends(ConfiguracionModulo)])
 def eliminar_fondo_login(
     db: Session = Depends(get_db),
     usuario_actual: Usuario = Depends(AdminUsuario),

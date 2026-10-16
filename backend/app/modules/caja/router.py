@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 
 from app.core.database import get_db
-from app.core.dependencies import PersonalUsuario
+from app.core.dependencies import PersonalUsuario, CajaModulo
 from app.common.auditoria import crear_registro_auditoria
 from app.modules.caja.modelos import SesionCaja
 from app.modules.caja.esquemas import (
@@ -72,7 +72,7 @@ def _desglose_pagos(pagos: list[Pago], ventas_particulares: list[VentaParticular
     }
 
 
-@router.post("/abrir", response_model=SesionCajaResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/abrir", response_model=SesionCajaResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(CajaModulo)])
 def abrir_sesion_caja(
     datos: SesionCajaAbrir,
     request: Request,
@@ -114,7 +114,7 @@ def abrir_sesion_caja(
     return SesionCajaResponse.model_validate(sesion)
 
 
-@router.get("/activa", response_model=SesionCajaResponse)
+@router.get("/activa", response_model=SesionCajaResponse, dependencies=[Depends(CajaModulo)])
 def obtener_sesion_activa(
     db: Session = Depends(get_db),
     usuario_actual: Usuario = Depends(PersonalUsuario),
@@ -135,7 +135,7 @@ def obtener_sesion_activa(
     return SesionCajaResponse.model_validate(sesion)
 
 
-@router.get("/{sesion_id}/resumen", response_model=dict)
+@router.get("/{sesion_id}/resumen", response_model=dict, dependencies=[Depends(CajaModulo)])
 def obtener_resumen_sesion(
     sesion_id: str,
     db: Session = Depends(get_db),
@@ -161,7 +161,7 @@ def obtener_resumen_sesion(
     }
 
 
-@router.post("/{sesion_id}/cerrar", response_model=SesionCajaResponse)
+@router.post("/{sesion_id}/cerrar", response_model=SesionCajaResponse, dependencies=[Depends(CajaModulo)])
 def cerrar_sesion_caja(
     sesion_id: str,
     datos: SesionCajaCerrar,
@@ -218,7 +218,7 @@ def cerrar_sesion_caja(
     return SesionCajaResponse.model_validate(sesion)
 
 
-@router.get("", response_model=SesionesCajaPaginadas)
+@router.get("", response_model=SesionesCajaPaginadas, dependencies=[Depends(CajaModulo)])
 def listar_sesiones_caja(
     estado: str | None = Query(None),
     usuario_id: str | None = Query(None),
