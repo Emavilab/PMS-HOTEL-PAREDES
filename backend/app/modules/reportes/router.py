@@ -11,7 +11,16 @@ from io import BytesIO
 
 from app.core.database import get_db
 from app.core.dependencies import GerenteUsuario, PersonalUsuario, ReportesModulo, DashboardModulo
-from app.common.exportar import exportar_excel, exportar_pdf
+from app.common.exportar import (
+    DATA_ALIGN,
+    HEADER_ALIGN,
+    HEADER_FILL,
+    HEADER_FONT,
+    THIN_BORDER,
+    _normalizar_valor,
+    exportar_excel,
+    exportar_pdf,
+)
 from app.modules.reportes.esquemas import (
     ReporteOcupacion,
     ReporteIngresos,
@@ -26,8 +35,6 @@ from app.modules.reportes.esquemas import (
     ReporteForecast,
     LibroHuespedesItem,
     ReporteLibroHuespedes,
-    ImpuestoTuristicoItem,
-    ReporteImpuestosTuristicos,
     ReporteVentas,
     ConciliacionCajaItem,
     ReporteConciliacionCaja,
@@ -42,6 +49,12 @@ from app.modules.usuarios.modelos import Usuario
 from app.modules.limpieza.modelos import TareaLimpieza
 from app.modules.caja.modelos import SesionCaja
 from app.modules.configuracion.modelos import HotelConfig
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Table, TableStyle
 
 router = APIRouter(prefix="/reportes", tags=["Reportes"])
 
@@ -125,17 +138,6 @@ COLUMNAS_LIBRO_HUESPEDES = [
     {"key": "total", "header": "Total", "width": 14},
 ]
 
-COLUMNAS_IMPUESTOS_TURISTICOS = [
-    {"key": "codigo_confirmacion", "header": "Confirmación", "width": 18},
-    {"key": "huesped", "header": "Huésped", "width": 25},
-    {"key": "fecha_entrada", "header": "Entrada", "width": 14},
-    {"key": "fecha_salida", "header": "Salida", "width": 14},
-    {"key": "noches", "header": "Noches", "width": 8},
-    {"key": "tarifa_base", "header": "Tarifa Base", "width": 14},
-    {"key": "impuesto_turistico", "header": "Imp. Turístico", "width": 16},
-    {"key": "total_con_impuesto", "header": "Total c/Imp.", "width": 16},
-]
-
 COLUMNAS_CONCILIACION_CAJA = [
     {"key": "fecha", "header": "Fecha", "width": 14},
     {"key": "cajero", "header": "Cajero", "width": 20},
@@ -213,59 +215,6 @@ def reporte_ocupacion(
         fecha_actual += timedelta(days=1)
 
     return resultados
-
-
-@router.get("/exportar", dependencies=[Depends(ReportesModulo)])
-def exportar_reporte(
-    tipo: str = Query(..., description="ocupacion | ingresos"),
-    formato: str = Query("xlsx", description="xlsx | pdf"),
-    desde: date = Query(...),
-    hasta: date = Query(...),
-    db: Session = Depends(get_db),
-    _: Usuario = Depends(GerenteUsuario),
-):
-    if tipo == "ocupacion":
-        datos_model = reporte_ocupacion(desde=desde, hasta=hasta, db=db, _=None)
-        columnas = COLUMNAS_OCUPACION
-        titulo = "Reporte de Ocupación"
-        subtitulo = f"Período: {desde.strftime('%d/%m/%Y')} - {hasta.strftime('%d/%m/%Y')}"
-    elif tipo == "ingresos":
-        reporte = reporte_ingresos(desde=desde, hasta=hasta, db=db, _=None)
-        datos_model = [
-            {
-                "fecha": f"{reporte.desde} - {reporte.hasta}",
-                "total_ingresos": reporte.total_ingresos,
-                "total_cargos": reporte.total_cargos,
-                "total_pagos": reporte.total_pagos,
-                "descuentos_aplicados": reporte.descuentos_aplicados,
-                "impuestos_recaudados": reporte.impuestos_recaudados,
-            }
-        ]
-        columnas = COLUMNAS_INGRESOS
-        titulo = "Reporte de Ingresos"
-        subtitulo = f"Período: {desde.strftime('%d/%m/%Y')} - {hasta.strftime('%d/%m/%Y')}"
-    else:
-        raise HTTPException(status_code=400, detail="Tipo de reporte no válido: ocupacion | ingresos")
-
-    datos = [item.model_dump() if hasattr(item, "model_dump") else item for item in datos_model]
-
-    if formato == "xlsx":
-        contenido = exportar_excel(datos, columnas, titulo)
-        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        extension = "xlsx"
-    elif formato == "pdf":
-        contenido = exportar_pdf(datos, columnas, titulo, subtitulo)
-        media_type = "application/pdf"
-        extension = "pdf"
-    else:
-        raise HTTPException(status_code=400, detail="Formato no válido: xlsx | pdf")
-
-    filename = f"{tipo}_{desde.strftime('%Y%m%d')}_{hasta.strftime('%Y%m%d')}.{extension}"
-    return StreamingResponse(
-        BytesIO(contenido),
-        media_type=media_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
 
 
 @router.get("/ingresos", response_model=ReporteIngresos, dependencies=[Depends(DashboardModulo)])
@@ -817,62 +766,6 @@ def reporte_libro_huespedes(
     )
 
 
-@router.get("/impuestos-turisticos", response_model=ReporteImpuestosTuristicos, dependencies=[Depends(ReportesModulo)])
-def reporte_impuestos_turisticos(
-    desde: date = Query(...),
-    hasta: date = Query(...),
-    db: Session = Depends(get_db),
-    _: Usuario = Depends(GerenteUsuario),
-):
-    """Impuesto turístico por huésped/noche (configurable % sobre tarifa base)."""
-    # Usar el % de impuesto configurado (ej. 10% típico impuesto turístico)
-    config = db.query(HotelConfig).first()
-    pct_turistico = (config.impuesto_turistico if config and hasattr(config, 'impuesto_turistico') and config.impuesto_turistico else 10.0) / 100
-
-    reservas = db.query(Reserva).filter(
-        Reserva.fecha_entrada >= desde,
-        Reserva.fecha_salida <= hasta,
-        Reserva.estado.in_(["CHECKED_IN", "CHECKED_OUT"]),
-    ).all()
-
-    items = []
-    total_noches = 0
-    total_impuesto = 0.0
-
-    for r in reservas:
-        noches = (r.fecha_salida - r.fecha_entrada).days
-        if noches <= 0:
-            continue
-        tarifa_noche = float(r.subtotal or 0) / max(noches, 1)
-        impuesto_noche = round(tarifa_noche * pct_turistico, 2)
-        impuesto_total = round(impuesto_noche * noches, 2)
-
-        huesped = r.huesped
-        nombre = f"{huesped.nombres} {huesped.apellidos}" if huesped else "N/A"
-
-        items.append(ImpuestoTuristicoItem(
-            reserva_id=r.id,
-            codigo_confirmacion=r.codigo_confirmacion,
-            huesped=nombre,
-            fecha_entrada=r.fecha_entrada,
-            fecha_salida=r.fecha_salida,
-            noches=noches,
-            tarifa_base=round(tarifa_noche, 2),
-            impuesto_turistico=impuesto_total,
-            total_con_impuesto=round(float(r.total or 0) + impuesto_total, 2),
-        ))
-        total_noches += noches
-        total_impuesto += impuesto_total
-
-    return ReporteImpuestosTuristicos(
-        desde=desde,
-        hasta=hasta,
-        total_noches=total_noches,
-        total_impuesto_turistico=round(total_impuesto, 2),
-        items=items,
-    )
-
-
 @router.get("/conciliacion-caja", response_model=ReporteConciliacionCaja, dependencies=[Depends(ReportesModulo)])
 def reporte_conciliacion_caja(
     desde: date = Query(...),
@@ -1050,22 +943,41 @@ def reporte_ejecutivo(
 
 # ===== EXPORTAR PARA NUEVOS REPORTES FASE 3 =====
 
-def _exportar_generico(tipo: str, formato: str, desde: date, hasta: date, db: Session, _: Usuario):
+def _exportar_generico(tipo: str, formato: str, desde: date, hasta: date, db: Session, usuario: Usuario):
     # Primero obtener los datos y columnas según el tipo
-    if tipo == "cuentas-por-cobrar":
-        reporte = reporte_cuentas_por_cobrar(hasta=hasta, db=db, _=_ )
+    if tipo == "ocupacion":
+        reporte = reporte_ocupacion(desde=desde, hasta=hasta, db=db, _=usuario)
+        datos = [item.model_dump() for item in reporte]
+        columnas = COLUMNAS_OCUPACION
+        titulo = "Reporte de Ocupación"
+        subtitulo = f"Período: {desde.strftime('%d/%m/%Y')} - {hasta.strftime('%d/%m/%Y')}"
+    elif tipo == "ingresos":
+        reporte = reporte_ingresos(desde=desde, hasta=hasta, db=db, _=usuario)
+        datos = [{
+            "fecha": f"{reporte.desde} - {reporte.hasta}",
+            "total_ingresos": reporte.total_ingresos,
+            "total_cargos": reporte.total_cargos,
+            "total_pagos": reporte.total_pagos,
+            "descuentos_aplicados": reporte.descuentos_aplicados,
+            "impuestos_recaudados": reporte.impuestos_recaudados,
+        }]
+        columnas = COLUMNAS_INGRESOS
+        titulo = "Reporte de Ingresos"
+        subtitulo = f"Período: {desde.strftime('%d/%m/%Y')} - {hasta.strftime('%d/%m/%Y')}"
+    elif tipo == "cuentas-por-cobrar":
+        reporte = reporte_cuentas_por_cobrar(hasta=hasta, db=db, _=usuario)
         datos = [item.model_dump() for item in reporte.items]
         columnas = COLUMNAS_CUENTAS_COBRAR
         titulo = "Cuentas por Cobrar (Aging)"
         subtitulo = f"Al {hasta.strftime('%d/%m/%Y')}"
     elif tipo == "housekeeping":
-        reporte = reporte_housekeeping(fecha=hasta, db=db, _=_ )
+        reporte = reporte_housekeeping(fecha=hasta, db=db, _=usuario)
         datos = [item.model_dump() for item in reporte.productividad_por_camarera]
         columnas = COLUMNAS_HOUSEKEEPING
         titulo = "Productividad Housekeeping"
         subtitulo = f"Fecha: {hasta.strftime('%d/%m/%Y')}"
     elif tipo == "ingresos-detallado":
-        reporte = reporte_ingresos_detallado(desde=desde, hasta=hasta, db=db, _=_ )
+        reporte = reporte_ingresos_detallado(desde=desde, hasta=hasta, db=db, _=usuario)
         if formato == "xlsx":
             wb = Workbook()
             ws1 = wb.active
@@ -1125,37 +1037,31 @@ def _exportar_generico(tipo: str, formato: str, desde: date, hasta: date, db: Se
             headers={"Content-Disposition": f'attachment; filename="ingresos_detallado_{desde.strftime("%Y%m%d")}_{hasta.strftime("%Y%m%d")}.{extension}"'},
         )
     elif tipo == "forecast":
-        reporte = reporte_forecast(desde=desde, hasta=hasta, db=db, _=_ )
+        reporte = reporte_forecast(desde=desde, hasta=hasta, db=db, _=usuario)
         datos = [item.model_dump() for item in reporte.items]
         columnas = COLUMNAS_FORECAST
         titulo = "Forecast de Ocupación e Ingresos"
         subtitulo = f"Período: {desde.strftime('%d/%m/%Y')} - {hasta.strftime('%d/%m/%Y')}"
     elif tipo == "libro-huespedes":
-        reporte = reporte_libro_huespedes(desde=desde, hasta=hasta, db=db, _=_ )
+        reporte = reporte_libro_huespedes(desde=desde, hasta=hasta, db=db, _=usuario)
         datos = [item.model_dump() for item in reporte.items]
         columnas = COLUMNAS_LIBRO_HUESPEDES
         titulo = "Libro de Huéspedes"
         subtitulo = f"Período: {desde.strftime('%d/%m/%Y')} - {hasta.strftime('%d/%m/%Y')}"
-    elif tipo == "impuestos-turisticos":
-        reporte = reporte_impuestos_turisticos(desde=desde, hasta=hasta, db=db, _=_ )
-        datos = [item.model_dump() for item in reporte.items]
-        columnas = COLUMNAS_IMPUESTOS_TURISTICOS
-        titulo = "Impuestos Turísticos"
-        subtitulo = f"Período: {desde.strftime('%d/%m/%Y')} - {hasta.strftime('%d/%m/%Y')}"
     elif tipo == "ventas":
-        reporte = reporte_ventas(desde=desde, hasta=hasta, db=db, _=_ )
+        reporte = reporte_ventas(desde=desde, hasta=hasta, db=db, _=usuario)
         datos = reporte.items
         columnas = COLUMNAS_VENTAS
         titulo = "Reporte de Ventas"
         subtitulo = f"Período: {desde.strftime('%d/%m/%Y')} - {hasta.strftime('%d/%m/%Y')}"
     elif tipo == "conciliacion-caja":
-        reporte = reporte_conciliacion_caja(desde=desde, hasta=hasta, db=db, _=_ )
+        reporte = reporte_conciliacion_caja(desde=desde, hasta=hasta, db=db, _=usuario)
         datos = [item.model_dump() for item in reporte.items]
         columnas = COLUMNAS_CONCILIACION_CAJA
         titulo = "Conciliación de Caja"
         subtitulo = f"Período: {desde.strftime('%d/%m/%Y')} - {hasta.strftime('%d/%m/%Y')}"
     elif tipo == "ejecutivo":
-        reporte = reporte_ejecutivo(desde=desde, hasta=hasta, db=db, _=_ )
+        reporte = reporte_ejecutivo(desde=desde, hasta=hasta, db=db, _=usuario)
         datos = [item.model_dump() for item in reporte.kpis]
         columnas = COLUMNAS_EJECUTIVO
         titulo = "Dashboard Ejecutivo KPIs"
@@ -1165,15 +1071,21 @@ def _exportar_generico(tipo: str, formato: str, desde: date, hasta: date, db: Se
 
     # Generar archivo
     if formato == "xlsx":
-        contenido = exportar_excel(datos, columnas, titulo)
+        config = db.query(HotelConfig).first()
+        config_data = {key: getattr(config, key) for key in ("nombre", "direccion", "telefono", "email", "logo_url", "moneda")} if config else {}
+        contenido = exportar_excel(datos, columnas, titulo, subtitulo, config_data, usuario.nombre_completo)
         media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         extension = "xlsx"
-    else:
-        contenido = exportar_pdf(datos, columnas, titulo, subtitulo)
+    elif formato == "pdf":
+        config = db.query(HotelConfig).first()
+        config_data = {key: getattr(config, key) for key in ("nombre", "direccion", "telefono", "email", "logo_url", "moneda")} if config else {}
+        contenido = exportar_pdf(datos, columnas, titulo, subtitulo, config_data, usuario.nombre_completo)
         media_type = "application/pdf"
         extension = "pdf"
+    else:
+        raise HTTPException(status_code=400, detail="Formato no válido: xlsx | pdf")
 
-    filename = f"{tipo}_{datetime.now().strftime('%Y%m%d')}.{extension}"
+    filename = f"{tipo}_{date.today().isoformat()}.{extension}"
     return StreamingResponse(
         BytesIO(contenido),
         media_type=media_type,

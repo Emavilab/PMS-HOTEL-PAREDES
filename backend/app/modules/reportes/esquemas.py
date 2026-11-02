@@ -129,26 +129,6 @@ class ReporteLibroHuespedes(BaseModel):
     items: List[LibroHuespedesItem]
 
 
-class ImpuestoTuristicoItem(BaseModel):
-    reserva_id: str
-    codigo_confirmacion: str
-    huesped: str
-    fecha_entrada: date
-    fecha_salida: date
-    noches: int
-    tarifa_base: float
-    impuesto_turistico: float
-    total_con_impuesto: float
-
-
-class ReporteImpuestosTuristicos(BaseModel):
-    desde: date
-    hasta: date
-    total_noches: int
-    total_impuesto_turistico: float
-    items: List[ImpuestoTuristicoItem]
-
-
 class ReporteVentas(BaseModel):
     desde: date
     hasta: date
