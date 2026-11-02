@@ -224,8 +224,6 @@ export const api = {
       peticion<any>(`/reportes/forecast?desde=${desde}&hasta=${hasta}`),
     libroHuespedes: (desde: string, hasta: string) =>
       peticion<any>(`/reportes/libro-huespedes?desde=${desde}&hasta=${hasta}`),
-    impuestosTuristicos: (desde: string, hasta: string) =>
-      peticion<any>(`/reportes/impuestos-turisticos?desde=${desde}&hasta=${hasta}`),
     ventas: (desde: string, hasta: string) =>
       peticion<any>(`/reportes/ventas?desde=${desde}&hasta=${hasta}`),
     conciliacionCaja: (desde: string, hasta: string) =>

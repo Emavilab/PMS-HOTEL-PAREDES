@@ -16,6 +16,7 @@ export interface RegistroAuditoria {
   id: string
   accion: string
   tipo_entidad: string
+  modulo?: string
   entidad_id: string | null
   usuario_id: string | null
   nombre_usuario: string | null
