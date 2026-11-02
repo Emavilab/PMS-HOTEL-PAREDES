@@ -100,9 +100,6 @@ export default function RecepcionPage() {
   const [showQuickReserva, setShowQuickReserva] = useState(false)
   const [roomToRent, setRoomToRent] = useState<any | null>(null)
   const [occupiedRoom, setOccupiedRoom] = useState<any | null>(null)
-  const [search, setSearch] = useState("")
-  const [searchResults, setSearchResults] = useState<any[] | null>(null)
-  const [searching, setSearching] = useState(false)
 
   const loadData = useCallback(() => {
     setLoading(true)
@@ -229,19 +226,6 @@ export default function RecepcionPage() {
   }, {})
   const floors = Object.entries(roomsByFloor).sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
 
-  async function handleSearch() {
-    if (!search.trim()) return
-    setSearching(true)
-    try {
-      const results = await api.huespedes.listar(search)
-      setSearchResults(results)
-    } catch (err: any) {
-      setError(err.message)
-    } finally {
-      setSearching(false)
-    }
-  }
-
   function handleRoomClick(room: any) {
     if (room.estado_operativo === "DISPONIBLE" && room.estado_limpieza === "LIMPIA") {
       setRoomToRent(room)
@@ -329,57 +313,6 @@ export default function RecepcionPage() {
           </div>
         </div>
       </div>
-
-      <Card className="border-gray-200 shadow-sm">
-        <CardContent className="p-3 sm:p-4">
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                className="pl-9"
-                placeholder="Buscar huésped por nombre, documento o email..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              />
-            </div>
-            <Button onClick={handleSearch} disabled={searching || !search.trim()} className="sm:w-32">
-              {searching ? "Buscando" : "Buscar"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {searchResults !== null && (
-        <Card>
-          <CardHeader className="py-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm">Resultados de búsqueda</CardTitle>
-              <button onClick={() => { setSearchResults(null); setSearch("") }} className="text-gray-400 hover:text-gray-600">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          </CardHeader>
-          <CardContent className="py-2">
-            {searching ? (
-              <p className="text-sm text-gray-500">Buscando...</p>
-            ) : searchResults.length === 0 ? (
-              <p className="text-sm text-gray-500">No se encontraron huéspedes</p>
-            ) : (
-              <div className="space-y-2">
-                {searchResults.map((h) => (
-                  <div key={h.id} className="flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50 p-3 text-sm">
-                    <div>
-                      <p className="font-medium">{h.nombres} {h.apellidos}</p>
-                      <p className="text-xs text-gray-500">{h.tipo_documento}: {h.numero_documento} {h.email && `| ${h.email}`}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
 
       {error && (
         <ErrorToast message={error} onClose={() => setError("")} />

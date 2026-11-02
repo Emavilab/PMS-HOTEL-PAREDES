@@ -7,23 +7,19 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge, statusBadge } from "@/components/ui/badge"
 import { formatCurrency, formatDateShort } from "@/lib/utils"
-import { Download, FileSpreadsheet, FileText, CreditCard, Users, TrendingUp, Calendar, AlertCircle, BookOpen, Landmark, Calculator, BarChart3, ShoppingCart } from "lucide-react"
+import { FileSpreadsheet, FileText, CreditCard, Users, TrendingUp, Calendar, AlertCircle, BookOpen, Calculator, BarChart3, ShoppingCart } from "lucide-react"
 import { ErrorToast } from "@/components/ui/error-toast"
 
-type ReporteActivo = "ocupacion" | "ingresos" | "cuentas-cobrar" | "housekeeping" | "ingresos-detallado" | "forecast" | "libro-huespedes" | "impuestos-turisticos" | "conciliacion-caja" | "ventas" | "ejecutivo"
+type ReporteActivo = "ocupacion" | "ingresos" | "cuentas-cobrar" | "ingresos-detallado" | "libro-huespedes" | "conciliacion-caja" | "ventas"
 
 const REPORTES: { key: ReporteActivo; label: string; icon: any; desc: string }[] = [
   { key: "ocupacion", label: "Ocupación", icon: Calendar, desc: "Ocupación diaria, % y habitaciones disponibles" },
   { key: "ingresos", label: "Ingresos", icon: CreditCard, desc: "Resumen de ingresos, cargos, pagos e impuestos" },
   { key: "cuentas-cobrar", label: "Ctas. por Cobrar", icon: AlertCircle, desc: "Aging de saldos pendientes por tramo de vencimiento" },
-  { key: "housekeeping", label: "Housekeeping", icon: Users, desc: "Productividad por camarera, tareas e inspecciones" },
   { key: "ingresos-detallado", label: "Ingresos Detallado", icon: CreditCard, desc: "Ingresos por canal (Walk-in, OTA, etc.) y tipo habitación" },
-  { key: "forecast", label: "Forecast", icon: TrendingUp, desc: "Ocupación e ingresos estimados próximos días" },
   { key: "libro-huespedes", label: "Libro Huéspedes", icon: BookOpen, desc: "Registro legal numerado de huéspedes (cumplimiento)" },
-  { key: "impuestos-turisticos", label: "Imp. Turísticos", icon: Landmark, desc: "Impuesto turístico por huésped/noche (declaración)" },
   { key: "conciliacion-caja", label: "Conciliación Caja", icon: Calculator, desc: "Arqueos, diferencias y estado por sesión de caja" },
   { key: "ventas", label: "Ventas", icon: ShoppingCart, desc: "Ventas particulares y consumos cargados a habitaciones" },
-  { key: "ejecutivo", label: "Dashboard Ejecutivo", icon: BarChart3, desc: "RevPAR, ADR, Ocupación, GOPPAR por período" },
 ]
 
 export default function ReportesPage() {
@@ -42,14 +38,10 @@ export default function ReportesPage() {
   const [occupancy, setOccupancy] = useState<any[]>([])
   const [revenue, setRevenue] = useState<any | null>(null)
   const [cuentasCobrar, setCuentasCobrar] = useState<any | null>(null)
-  const [housekeeping, setHousekeeping] = useState<any | null>(null)
   const [ingresosDetallado, setIngresosDetallado] = useState<any | null>(null)
-  const [forecast, setForecast] = useState<any | null>(null)
   const [libroHuespedes, setLibroHuespedes] = useState<any | null>(null)
-  const [impuestosTuristicos, setImpuestosTuristicos] = useState<any | null>(null)
   const [conciliacionCaja, setConciliacionCaja] = useState<any | null>(null)
   const [ventas, setVentas] = useState<any | null>(null)
-  const [ejecutivo, setEjecutivo] = useState<any | null>(null)
 
   async function loadReports() {
     setLoading(true)
@@ -71,29 +63,14 @@ export default function ReportesPage() {
           setCuentasCobrar(cc)
           break
         }
-        case "housekeeping": {
-          const hk = await api.reportes.housekeeping(endDate)
-          setHousekeeping(hk)
-          break
-        }
         case "ingresos-detallado": {
           const id = await api.reportes.ingresosDetallado(startDate, endDate)
           setIngresosDetallado(id)
           break
         }
-        case "forecast": {
-          const fc = await api.reportes.forecast(startDate, endDate)
-          setForecast(fc)
-          break
-        }
         case "libro-huespedes": {
           const lh = await api.reportes.libroHuespedes(startDate, endDate)
           setLibroHuespedes(lh)
-          break
-        }
-        case "impuestos-turisticos": {
-          const it = await api.reportes.impuestosTuristicos(startDate, endDate)
-          setImpuestosTuristicos(it)
           break
         }
         case "conciliacion-caja": {
@@ -104,11 +81,6 @@ export default function ReportesPage() {
         case "ventas": {
           const v = await api.reportes.ventas(startDate, endDate)
           setVentas(v)
-          break
-        }
-        case "ejecutivo": {
-          const ej = await api.reportes.ejecutivo(startDate, endDate, "mensual")
-          setEjecutivo(ej)
           break
         }
       }
@@ -145,17 +117,13 @@ export default function ReportesPage() {
     ocupacion: "ocupacion",
     ingresos: "ingresos",
     "cuentas-cobrar": "cuentas-por-cobrar",
-    housekeeping: "housekeeping",
     "ingresos-detallado": "ingresos-detallado",
-    forecast: "forecast",
     "libro-huespedes": "libro-huespedes",
-    "impuestos-turisticos": "impuestos-turisticos",
     "conciliacion-caja": "conciliacion-caja",
     ventas: "ventas",
-    ejecutivo: "ejecutivo",
   }
 
-  const necesitaRango = ["ocupacion", "ingresos", "ingresos-detallado", "forecast", "libro-huespedes", "impuestos-turisticos", "conciliacion-caja", "ventas", "ejecutivo"].includes(reporteActivo)
+  const necesitaRango = ["ocupacion", "ingresos", "ingresos-detallado", "libro-huespedes", "conciliacion-caja", "ventas"].includes(reporteActivo)
 
   return (
     <div className="space-y-6">
@@ -193,7 +161,7 @@ export default function ReportesPage() {
                   <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
                 </div>
               </>
-            ) : reporteActivo === "housekeeping" || reporteActivo === "cuentas-cobrar" ? (
+            ) : reporteActivo === "cuentas-cobrar" ? (
               <div className="space-y-2">
                 <label className="text-sm font-medium">Fecha / Al día</label>
                 <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
@@ -218,14 +186,10 @@ export default function ReportesPage() {
       {reporteActivo === "ocupacion" && <ReporteOcupacionView data={occupancy} loading={loading} />}
       {reporteActivo === "ingresos" && <ReporteIngresosView data={revenue} loading={loading} />}
       {reporteActivo === "cuentas-cobrar" && <ReporteCuentasCobrarView data={cuentasCobrar} loading={loading} />}
-      {reporteActivo === "housekeeping" && <ReporteHousekeepingView data={housekeeping} loading={loading} />}
       {reporteActivo === "ingresos-detallado" && <ReporteIngresosDetalladoView data={ingresosDetallado} loading={loading} />}
-      {reporteActivo === "forecast" && <ReporteForecastView data={forecast} loading={loading} />}
       {reporteActivo === "libro-huespedes" && <ReporteLibroHuespedesView data={libroHuespedes} loading={loading} />}
-      {reporteActivo === "impuestos-turisticos" && <ReporteImpuestosTuristicosView data={impuestosTuristicos} loading={loading} />}
       {reporteActivo === "conciliacion-caja" && <ReporteConciliacionCajaView data={conciliacionCaja} loading={loading} />}
       {reporteActivo === "ventas" && <ReporteVentasView data={ventas} loading={loading} />}
-      {reporteActivo === "ejecutivo" && <ReporteEjecutivoView data={ejecutivo} loading={loading} />}
     </div>
   )
 }
@@ -616,65 +580,6 @@ function ReporteLibroHuespedesView({ data, loading }: { data: any | null; loadin
           </CardContent>
         </Card>
       )}
-    </div>
-  )
-}
-
-function ReporteImpuestosTuristicosView({ data, loading }: { data: any | null; loading: boolean }) {
-  return (
-    <div className="space-y-6">
-      {data && (
-        <Card>
-          <CardContent className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Card><CardContent className="p-6"><p className="text-sm text-gray-500">Total Noches</p><p className="text-2xl font-bold">{data.total_noches}</p></CardContent></Card>
-              <Card><CardContent className="p-6"><p className="text-sm text-gray-500">Impuesto Turístico Total</p><p className="text-2xl font-bold">{formatCurrency(data.total_impuesto_turistico)}</p></CardContent></Card>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <Card>
-        <CardHeader><CardTitle className="text-lg">Detalle Impuesto Turístico</CardTitle></CardHeader>
-        <CardContent>
-          {loading ? (
-            <p className="text-gray-500">Cargando...</p>
-          ) : data ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left p-2">Confirmación</th>
-                    <th className="text-left p-2">Huésped</th>
-                    <th className="text-right p-2">Entrada</th>
-                    <th className="text-right p-2">Salida</th>
-                    <th className="text-right p-2">Noches</th>
-                    <th className="text-right p-2">Tarifa Base</th>
-                    <th className="text-right p-2">Imp. Turístico</th>
-                    <th className="text-right p-2">Total c/Imp.</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(data.items || []).map((item: any) => (
-                    <tr key={item.reserva_id} className="border-b">
-                      <td className="p-2">{item.codigo_confirmacion}</td>
-                      <td className="p-2">{item.huesped}</td>
-                      <td className="p-2">{formatDateShort(item.fecha_entrada)}</td>
-                      <td className="p-2">{formatDateShort(item.fecha_salida)}</td>
-                      <td className="text-right p-2">{item.noches}</td>
-                      <td className="text-right p-2">{formatCurrency(item.tarifa_base)}</td>
-                      <td className="text-right p-2 text-blue-600">{formatCurrency(item.impuesto_turistico)}</td>
-                      <td className="text-right p-2">{formatCurrency(item.total_con_impuesto)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="text-gray-500">Sin datos</p>
-          )}
-        </CardContent>
-      </Card>
     </div>
   )
 }
