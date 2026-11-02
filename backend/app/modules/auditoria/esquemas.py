@@ -11,6 +11,7 @@ class RegistroAuditoriaResponse(BaseModel):
     rol_usuario: Optional[str] = None
     accion: str
     tipo_entidad: str
+    modulo: str = ""
     entidad_id: Optional[str] = None
     valores_anteriores: Optional[str] = None
     valores_nuevos: Optional[str] = None
