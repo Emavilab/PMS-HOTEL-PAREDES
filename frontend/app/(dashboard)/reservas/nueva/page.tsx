@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { api } from "@/lib/api"
+import { getHotelDateKey } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -53,8 +54,8 @@ export default function NuevaReservaPage() {
         setForm((f) => ({ ...f, metodo_pago: activos[0]?.nombre || "" }))
       })
       .catch((err: any) => setError(err.message))
-    const hoy = new Date().toISOString().split("T")[0]
-    const maniana = new Date(Date.now() + 86400000).toISOString().split("T")[0]
+    const hoy = getHotelDateKey()
+    const maniana = getHotelDateKey(new Date(Date.now() + 86400000))
     setForm((f) => ({ ...f, fecha_entrada: hoy, fecha_salida: maniana }))
   }, [])
 

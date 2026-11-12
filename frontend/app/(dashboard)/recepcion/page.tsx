@@ -10,10 +10,12 @@ import { Dialog } from "@/components/ui/dialog"
 import { SuccessToast } from "@/components/ui/success-toast"
 import { ErrorToast } from "@/components/ui/error-toast"
 import { formatCurrency, formatDateShort } from "@/lib/utils"
+import { useAuth } from "@/hooks/useAuth"
 import {
   AlertTriangle,
   Banknote,
   BedDouble,
+  Car,
   Calendar,
   Check,
   CheckCircle2,
@@ -26,6 +28,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Phone,
   Wallet,
   X,
 } from "lucide-react"
@@ -78,8 +81,12 @@ interface AccionConfirmar {
 }
 
 export default function RecepcionPage() {
+  const { user } = useAuth()
   const [arrivals, setArrivals] = useState<any[]>([])
   const [departures, setDepartures] = useState<any[]>([])
+  const [occupiedVehicles, setOccupiedVehicles] = useState<any[]>([])
+  const [vehicleSearch, setVehicleSearch] = useState("")
+  const [activeTab, setActiveTab] = useState<"recepcion" | "vehiculos">("recepcion")
   const [salidasTab, setSalidasTab] = useState<"hoy" | "manana" | "proximas">("hoy")
   const [rooms, setRooms] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -103,22 +110,34 @@ export default function RecepcionPage() {
 
   const loadData = useCallback(() => {
     setLoading(true)
+    const permisos = Array.isArray(user?.permisos) ? user.permisos : []
+    const recepcionCompleta =
+      permisos.includes("recepcion") ||
+      ["ver", "crear", "editar", "eliminar"].every((accion) => permisos.includes(`recepcion:${accion}`))
+    const tienePermisoVer = (modulo: string) =>
+      user?.rol === "admin" ||
+      permisos.length === 0 ||
+      (recepcionCompleta && ["reportes", "habitaciones", "ventas", "facturacion"].includes(modulo)) ||
+      permisos.includes(modulo) ||
+      permisos.includes(`${modulo}:ver`)
     Promise.all([
-      api.reportes.llegadas(),
-      api.reportes.salidas(30),
-      api.habitaciones.listar(),
-      api.metodosPago.listar(),
-    ]).then(([arr, dep, r, metodos]) => {
+      tienePermisoVer("reportes") ? api.reportes.llegadas() : Promise.resolve([]),
+      tienePermisoVer("reportes") ? api.reportes.salidas(30) : Promise.resolve([]),
+      tienePermisoVer("habitaciones") ? api.habitaciones.listar() : Promise.resolve([]),
+      tienePermisoVer("habitaciones") ? api.metodosPago.listar() : Promise.resolve([]),
+      tienePermisoVer("ventas") ? api.ventas.ocupadas() : Promise.resolve([]),
+    ]).then(([arr, dep, r, metodos, ocupadas]) => {
       setArrivals(arr)
       setDepartures(dep)
       setRooms(r)
+      setOccupiedVehicles(ocupadas.filter((item: any) => item.tiene_vehiculo))
       const activos = metodos.filter((metodo: any) => metodo.activo)
       setMetodosPago(activos)
       setMetodoPago((actual) => activos.some((metodo: any) => metodo.nombre === actual) ? actual : activos[0]?.nombre || "")
     }).catch((err: any) => {
       setError(err.message)
     }).finally(() => setLoading(false))
-  }, [])
+  }, [user])
 
   useEffect(() => { loadData() }, [loadData])
 
@@ -318,6 +337,122 @@ export default function RecepcionPage() {
         <ErrorToast message={error} onClose={() => setError("")} />
       )}
 
+      <div className="flex overflow-x-auto rounded-xl border border-gray-200 bg-white p-1 shadow-sm">
+        <button
+          type="button"
+          onClick={() => setActiveTab("recepcion")}
+          className={`flex min-w-[140px] items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
+            activeTab === "recepcion"
+              ? "bg-blue-600 text-white shadow-sm"
+              : "text-gray-600 hover:bg-gray-50"
+          }`}
+        >
+          <ClipboardList className="h-4 w-4" />
+          Recepción
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("vehiculos")}
+          className={`flex min-w-[140px] items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
+            activeTab === "vehiculos"
+              ? "bg-sky-600 text-white shadow-sm"
+              : "text-gray-600 hover:bg-gray-50"
+          }`}
+        >
+          <Car className="h-4 w-4" />
+          Vehículos
+          {!loading && <span className="rounded-full bg-white/20 px-1.5 text-xs">{occupiedVehicles.length}</span>}
+        </button>
+      </div>
+
+      {activeTab === "vehiculos" ? (
+        <Card className="overflow-hidden border-blue-100">
+        <CardHeader className="border-b bg-sky-50/70">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Car className="h-5 w-5 text-sky-600" />
+                Vehículos en estadías
+                {!loading && (
+                  <Badge variant="info" className="text-xs">{occupiedVehicles.length}</Badge>
+                )}
+              </CardTitle>
+              <p className="mt-1 text-sm text-gray-500">
+                Consulta rápida de los vehículos registrados por huéspedes con check-in activo.
+              </p>
+            </div>
+            <div className="relative w-full md:w-72">
+              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+              <Input
+                value={vehicleSearch}
+                onChange={(event) => setVehicleSearch(event.target.value)}
+                placeholder="Buscar huésped, habitación o vehículo"
+                className="pl-9"
+              />
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-4">
+          {loading ? (
+            <p className="text-sm text-gray-500">Cargando vehículos...</p>
+          ) : (() => {
+            const term = vehicleSearch.trim().toLowerCase()
+            const vehicles = occupiedVehicles.filter((vehicle) => {
+              if (!term) return true
+              return [
+                vehicle.huesped,
+                vehicle.habitacion_numero,
+                vehicle.detalle_vehiculo,
+                vehicle.telefono_huesped,
+              ].some((value) => String(value || "").toLowerCase().includes(term))
+            })
+
+            if (vehicles.length === 0) {
+              return (
+                <div className="rounded-xl border border-dashed border-gray-200 p-6 text-center text-sm text-gray-500">
+                  {occupiedVehicles.length === 0
+                    ? "No hay vehículos registrados en estadías activas."
+                    : "No se encontraron vehículos con ese criterio."}
+                </div>
+              )
+            }
+
+            return (
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {vehicles.map((vehicle) => (
+                  <div key={vehicle.reserva_id} className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-gray-900">{vehicle.huesped}</p>
+                        <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-sky-700">
+                          <BedDouble className="h-4 w-4" />
+                          Habitación {vehicle.habitacion_numero || "Sin asignar"}
+                        </p>
+                      </div>
+                      <Car className="h-5 w-5 shrink-0 text-sky-500" />
+                    </div>
+                    <div className="mt-3 space-y-2 border-t pt-3 text-sm">
+                      <p className="flex items-start gap-2 text-gray-600">
+                        <Phone className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                        <span>{vehicle.telefono_huesped || "Teléfono no registrado"}</span>
+                      </p>
+                      <p className="flex items-start gap-2 text-gray-700">
+                        <Car className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                        <span className="font-medium">{vehicle.detalle_vehiculo || "Sin descripción"}</span>
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        Estadía: {formatDateShort(vehicle.fecha_entrada)} - {formatDateShort(vehicle.fecha_salida)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          })()}
+        </CardContent>
+        </Card>
+      ) : (
+        <>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="overflow-hidden">
           <CardHeader className="border-b bg-green-50/60">
@@ -632,6 +767,8 @@ export default function RecepcionPage() {
           </div>
         </CardContent>
       </Card>
+        </>
+      )}
 
       <Dialog
         open={accion?.tipo === "checkin"}

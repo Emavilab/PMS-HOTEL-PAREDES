@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { api } from "@/lib/api"
+import { getHotelDateKey } from "@/lib/utils"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge, statusBadge } from "@/components/ui/badge"
@@ -478,7 +479,7 @@ function CreateTaskModal({
     setSubmitting(true)
     setError("")
     try {
-      const today = new Date().toISOString().split("T")[0]
+      const today = getHotelDateKey()
       await api.limpieza.crear({
         habitacion_id: form.habitacion_id,
         asignada_a: form.asignada_a || null,

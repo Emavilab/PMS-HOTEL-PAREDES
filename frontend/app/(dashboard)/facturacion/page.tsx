@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { formatCurrency } from "@/lib/utils"
 import { FileText, Printer, Receipt } from "lucide-react"
+import { ErrorToast } from "@/components/ui/error-toast"
+import { SuccessToast } from "@/components/ui/success-toast"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
@@ -25,22 +27,27 @@ export default function FacturacionPage() {
   const [referenciaPago, setReferenciaPago] = useState("")
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [errorPago, setErrorPago] = useState("")
+  const [error, setError] = useState("")
+  const [success, setSuccess] = useState("")
 
   useEffect(() => {
-    api.configuracion.obtener().then(setHotelConfig).catch(() => {})
+    api.configuracion.obtener().then(setHotelConfig).catch((err) => setError(err.message || "No se pudo cargar la configuración"))
     api.metodosPago.listar().then((metodos) => {
       const activos = metodos.filter((metodo: any) => metodo.activo)
       setMetodosPago(activos)
       setMetodoPago(activos[0]?.nombre || "")
-    }).catch(() => {})
+    }).catch((err) => setError(err.message || "No se pudieron cargar los métodos de pago"))
     api.reservas.listar({ estado: "CHECKED_IN", per_page: "200" }).then((data) => {
       setReservations(data.items || [])
       setLoading(false)
-    }).catch(() => setLoading(false))
+    }).catch((err) => {
+      setError(err.message || "No se pudieron cargar las reservas activas")
+      setLoading(false)
+    })
   }, [])
 
   function loadFacturas() {
-    api.facturas.listar().then(setFacturas).catch(() => {})
+    api.facturas.listar().then(setFacturas).catch((err) => setError(err.message || "No se pudieron cargar las facturas"))
   }
 
   useEffect(() => {
@@ -52,8 +59,13 @@ export default function FacturacionPage() {
 
   async function loadFolio() {
     if (!selectedId) return
-    const f = await api.facturacion.obtenerFolio(selectedId)
-    setFolio(f)
+    try {
+      const f = await api.facturacion.obtenerFolio(selectedId)
+      setFolio(f)
+    } catch (err: any) {
+      setFolio(null)
+      setError(err.message || "No se pudo cargar el folio")
+    }
   }
 
   useEffect(() => {
@@ -67,6 +79,10 @@ export default function FacturacionPage() {
 
   async function registrarAbono() {
     if (!selectedId || !folio) return
+    if (Number(folio.saldo) <= 0) {
+      setErrorPago("Esta cuenta no tiene saldo pendiente")
+      return
+    }
     const monto = Number(montoPago)
     if (!Number.isFinite(monto) || monto <= 0) {
       setErrorPago("Indica un monto mayor que cero")
@@ -87,6 +103,7 @@ export default function FacturacionPage() {
       await loadFolio()
       setMontoPago("")
       setReferenciaPago("")
+      setSuccess(`Abono de ${formatCurrency(monto)} registrado correctamente`)
     } catch (err: any) {
       setErrorPago(err.message)
     } finally {
@@ -96,6 +113,8 @@ export default function FacturacionPage() {
 
   return (
     <div className="space-y-6">
+      <ErrorToast message={error} onClose={() => setError("")} />
+      <SuccessToast message={success} onClose={() => setSuccess("")} />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold">Facturación</h1>
         <div className="flex gap-2 rounded-md bg-gray-100 p-1 text-sm font-medium">

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge, statusBadge } from "@/components/ui/badge"
 import { formatCurrency, formatDateShort } from "@/lib/utils"
+import { getHotelDateKey } from "@/lib/utils"
 import { FileSpreadsheet, FileText, CreditCard, Users, TrendingUp, Calendar, AlertCircle, BookOpen, Calculator, BarChart3, ShoppingCart } from "lucide-react"
 import { ErrorToast } from "@/components/ui/error-toast"
 
@@ -23,9 +24,9 @@ const REPORTES: { key: ReporteActivo; label: string; icon: any; desc: string }[]
 ]
 
 export default function ReportesPage() {
-  const today = new Date().toISOString().split("T")[0]
-  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
-  const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
+  const today = getHotelDateKey()
+  const weekAgo = getHotelDateKey(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
+  const monthAgo = getHotelDateKey(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000))
 
   const [reporteActivo, setReporteActivo] = useState<ReporteActivo>("ocupacion")
   const [startDate, setStartDate] = useState(weekAgo)

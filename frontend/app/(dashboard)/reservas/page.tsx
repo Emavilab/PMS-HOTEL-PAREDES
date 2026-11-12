@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog } from "@/components/ui/dialog"
 import { formatCurrency, formatDateShort } from "@/lib/utils"
-import { AlertTriangle, Ban, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, LayoutList, LogIn, Plus, Search, Trash2, UserX } from "lucide-react"
+import { AlertTriangle, Ban, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, LayoutList, LogIn, Plus, RefreshCw, Search, Trash2, UserX } from "lucide-react"
 import type { ReservaLista } from "@/types"
 import { ErrorToast } from "@/components/ui/error-toast"
 
@@ -39,6 +39,8 @@ export default function ReservasPage() {
   const [vista, setVista] = useState<VistaReserva>("calendario")
   const [fechaActual, setFechaActual] = useState(() => startOfDay(new Date()))
   const [selectedReserva, setSelectedReserva] = useState<ReservaLista | null>(null)
+  const [estadoFiltro, setEstadoFiltro] = useState("")
+  const [tipoFiltro, setTipoFiltro] = useState("")
 
   const [error, setPageError] = useState("")
 
@@ -60,11 +62,14 @@ export default function ReservasPage() {
   const filtered = activeReservations.filter((r) => {
     const term = search.toLowerCase()
     return (
-      (r.huesped_nombre || "").toLowerCase().includes(term) ||
-      r.codigo_confirmacion.toLowerCase().includes(term) ||
-      (r.numero_habitacion || "").toLowerCase().includes(term)
+      (!estadoFiltro || r.estado === estadoFiltro) &&
+      (!tipoFiltro || r.tipo_habitacion_nombre === tipoFiltro) &&
+      ((r.huesped_nombre || "").toLowerCase().includes(term) ||
+        r.codigo_confirmacion.toLowerCase().includes(term) ||
+        (r.numero_habitacion || "").toLowerCase().includes(term))
     )
   })
+  const tiposHabitacion = Array.from(new Set(activeReservations.map((r) => r.tipo_habitacion_nombre).filter((tipo): tipo is string => Boolean(tipo)))).sort()
 
   const confirmadas = filtered.filter((r) => ["PENDIENTE", "CONFIRMADA", "CHECKED_IN"].includes(r.estado)).length
   const checkedIn = filtered.filter((r) => r.estado === "CHECKED_IN").length
@@ -124,6 +129,18 @@ export default function ReservasPage() {
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <select value={estadoFiltro} onChange={(e) => setEstadoFiltro(e.target.value)} className="h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700">
+                <option value="">Todos los estados</option>
+                {ESTADOS_RESERVA.filter((estado) => estado.value !== "CHECKED_OUT").map((estado) => <option key={estado.value} value={estado.value}>{estado.label}</option>)}
+              </select>
+              <select value={tipoFiltro} onChange={(e) => setTipoFiltro(e.target.value)} className="h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700">
+                <option value="">Todos los tipos</option>
+                {tiposHabitacion.map((tipo) => <option key={tipo} value={tipo}>{tipo}</option>)}
+              </select>
+              {(estadoFiltro || tipoFiltro || search) && <Button variant="outline" onClick={() => { setEstadoFiltro(""); setTipoFiltro(""); setSearch("") }}>Limpiar</Button>}
+              <Button variant="outline" size="icon" onClick={loadReservations} disabled={loading} title="Actualizar reservas">
+                <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              </Button>
               <div className="grid grid-cols-4 rounded-lg bg-gray-100 p-1 text-sm">
                 {VISTAS.map((item) => (
                   <button
@@ -227,7 +244,7 @@ function CalendarWeekRow({ semana, mes, reservas, onSelect }: { semana: Date[]; 
         const entrada = parseDate(reserva.fecha_entrada)
         const salida = parseDate(reserva.fecha_salida)
         const start = Math.max(0, daysBetween(inicio, entrada))
-        const end = Math.min(6, daysBetween(inicio, salida))
+        const end = Math.max(start, Math.min(6, daysBetween(inicio, salida) - 1))
         return (
           <button
             key={`${reserva.id}-${toDateKey(inicio)}`}
@@ -275,7 +292,7 @@ function WeekView({ fecha, reservas, onSelect }: { fecha: Date; reservas: Reserv
         const entrada = parseDate(reserva.fecha_entrada)
         const salida = parseDate(reserva.fecha_salida)
         const start = Math.max(0, daysBetween(inicio, entrada))
-        const end = Math.min(6, daysBetween(inicio, salida))
+        const end = Math.max(start, Math.min(6, daysBetween(inicio, salida) - 1))
         return (
           <button
             key={reserva.id}
@@ -834,7 +851,7 @@ function reservationStartsDate(reserva: ReservaLista, fecha: Date) {
 function reservationTouchesRange(reserva: ReservaLista, inicio: Date, fin: Date) {
   const entrada = parseDate(reserva.fecha_entrada)
   const salida = parseDate(reserva.fecha_salida)
-  return entrada <= fin && salida >= inicio
+  return entrada <= fin && salida > inicio
 }
 
 function parseDate(value: string | Date) {
