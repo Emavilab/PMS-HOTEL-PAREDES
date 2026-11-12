@@ -10,7 +10,7 @@ from sqlalchemy import func, cast, Date, and_, or_
 from io import BytesIO
 
 from app.core.database import get_db
-from app.core.dependencies import GerenteUsuario, PersonalUsuario, ReportesModulo, DashboardModulo
+from app.core.dependencies import DashboardModulo, LimpiezaUsuario, PersonalUsuario, ReportesModulo, ReportesUsuario
 from app.common.exportar import (
     DATA_ALIGN,
     HEADER_ALIGN,
@@ -49,6 +49,7 @@ from app.modules.usuarios.modelos import Usuario
 from app.modules.limpieza.modelos import TareaLimpieza
 from app.modules.caja.modelos import SesionCaja
 from app.modules.configuracion.modelos import HotelConfig
+from app.common.zona_horaria import ZONA_HOTEL, fecha_hotel
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from reportlab.lib import colors
@@ -179,7 +180,7 @@ def reporte_ocupacion(
     desde: date = Query(...),
     hasta: date = Query(...),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(GerenteUsuario),
+    _: Usuario = Depends(ReportesUsuario),
 ):
     total_habitaciones = db.query(func.count(Habitacion.id)).scalar() or 0
     if total_habitaciones == 0:
@@ -285,7 +286,7 @@ def llegadas_del_dia(
     db: Session = Depends(get_db),
     _: Usuario = Depends(PersonalUsuario),
 ):
-    dia = fecha or date.today()
+    dia = fecha or fecha_hotel()
     reservas = (
         db.query(Reserva)
         .filter(
@@ -312,42 +313,70 @@ def llegadas_del_dia(
     return resultado
 
 
-@router.get("/notificaciones", response_model=list[dict], dependencies=[Depends(DashboardModulo)])
+@router.get("/notificaciones", response_model=list[dict])
 def notificaciones_operativas(
     db: Session = Depends(get_db),
-    _: Usuario = Depends(PersonalUsuario),
+    usuario_actual: Usuario = Depends(LimpiezaUsuario),
 ):
-    """Resume eventos operativos que requieren atención en recepción y gerencia."""
-    hoy = date.today()
+    """Resume alertas operativas según el rol del usuario autenticado."""
+    hoy = fecha_hotel()
     limite = hoy + timedelta(days=7)
     notificaciones = []
 
-    reservas = db.query(Reserva).filter(
-        Reserva.estado.in_(["PENDIENTE", "CONFIRMADA", "CHECKED_IN"]),
-        or_(Reserva.fecha_entrada.between(hoy, limite), Reserva.fecha_salida.between(hoy, limite)),
-    ).order_by(Reserva.fecha_entrada, Reserva.fecha_salida).all()
-    for reserva in reservas:
-        nombre = f"{reserva.huesped.nombres} {reserva.huesped.apellidos}" if reserva.huesped else "Huésped"
-        if reserva.fecha_entrada == hoy and reserva.estado != "CHECKED_IN":
-            notificaciones.append({"id": f"llegada-{reserva.id}", "tipo": "llegada", "prioridad": "alta", "titulo": "Llegada hoy", "mensaje": f"{nombre} · {reserva.codigo_confirmacion}", "fecha": str(reserva.fecha_entrada), "href": "/reservas"})
-        elif hoy < reserva.fecha_entrada <= limite:
-            notificaciones.append({"id": f"llegada-{reserva.id}", "tipo": "llegada", "prioridad": "media", "titulo": "Próxima llegada", "mensaje": f"{nombre} · {reserva.fecha_entrada}", "fecha": str(reserva.fecha_entrada), "href": "/reservas"})
-        if reserva.fecha_salida == hoy and reserva.estado == "CHECKED_IN":
-            notificaciones.append({"id": f"salida-{reserva.id}", "tipo": "salida", "prioridad": "alta", "titulo": "Salida pendiente hoy", "mensaje": f"{nombre} · habitación {reserva.habitacion_ref.numero if reserva.habitacion_ref else 'sin asignar'}", "fecha": str(reserva.fecha_salida), "href": "/verificar-salida"})
-        elif hoy < reserva.fecha_salida <= limite:
-            notificaciones.append({"id": f"salida-{reserva.id}", "tipo": "salida", "prioridad": "media", "titulo": "Próxima salida", "mensaje": f"{nombre} · {reserva.fecha_salida}", "fecha": str(reserva.fecha_salida), "href": "/verificar-salida"})
+    if usuario_actual.rol != "limpieza":
+        reservas = db.query(Reserva).filter(
+            Reserva.estado.in_(["PENDIENTE", "CONFIRMADA", "CHECKED_IN"]),
+            or_(Reserva.fecha_entrada.between(hoy, limite), Reserva.fecha_salida.between(hoy, limite)),
+        ).order_by(Reserva.fecha_entrada, Reserva.fecha_salida).all()
+        for reserva in reservas:
+            nombre = f"{reserva.huesped.nombres} {reserva.huesped.apellidos}" if reserva.huesped else "Huésped"
+            if reserva.fecha_entrada == hoy and reserva.estado != "CHECKED_IN":
+                notificaciones.append({"id": f"llegada-{reserva.id}", "tipo": "llegada", "prioridad": "alta", "titulo": "Llegada hoy", "mensaje": f"{nombre} · {reserva.codigo_confirmacion}", "fecha": str(reserva.fecha_entrada), "href": "/reservas"})
+            elif hoy < reserva.fecha_entrada <= limite:
+                notificaciones.append({"id": f"llegada-{reserva.id}", "tipo": "llegada", "prioridad": "media", "titulo": "Próxima llegada", "mensaje": f"{nombre} · {reserva.fecha_entrada}", "fecha": str(reserva.fecha_entrada), "href": "/reservas"})
+            if reserva.fecha_salida == hoy and reserva.estado == "CHECKED_IN":
+                notificaciones.append({"id": f"salida-{reserva.id}", "tipo": "salida", "prioridad": "alta", "titulo": "Salida pendiente hoy", "mensaje": f"{nombre} · habitación {reserva.habitacion_ref.numero if reserva.habitacion_ref else 'sin asignar'}", "fecha": str(reserva.fecha_salida), "href": "/verificar-salida"})
+            elif hoy < reserva.fecha_salida <= limite:
+                notificaciones.append({"id": f"salida-{reserva.id}", "tipo": "salida", "prioridad": "media", "titulo": "Próxima salida", "mensaje": f"{nombre} · {reserva.fecha_salida}", "fecha": str(reserva.fecha_salida), "href": "/verificar-salida"})
 
-    reservas_vencidas = db.query(Reserva).filter(Reserva.estado == "PENDIENTE", Reserva.fecha_entrada < hoy).count()
-    if reservas_vencidas:
-        notificaciones.append({"id": "reservas-vencidas", "tipo": "reserva", "prioridad": "alta", "titulo": "Reservas pendientes vencidas", "mensaje": f"{reservas_vencidas} reserva(s) requieren confirmación o cancelación", "fecha": str(hoy), "href": "/reservas"})
+        reservas_vencidas = db.query(Reserva).filter(Reserva.estado == "PENDIENTE", Reserva.fecha_entrada < hoy).count()
+        if reservas_vencidas:
+            notificaciones.append({"id": "reservas-vencidas", "tipo": "reserva", "prioridad": "alta", "titulo": "Reservas pendientes vencidas", "mensaje": f"{reservas_vencidas} reserva(s) requieren confirmación o cancelación", "fecha": str(hoy), "href": "/reservas"})
 
-    tareas_pendientes = db.query(TareaLimpieza).filter(TareaLimpieza.estado.in_(["PENDIENTE", "EN_PROGRESO"]), TareaLimpieza.fecha_tarea <= hoy.isoformat()).count()
-    if tareas_pendientes:
-        notificaciones.append({"id": "limpieza-pendiente", "tipo": "limpieza", "prioridad": "alta", "titulo": "Limpieza pendiente", "mensaje": f"{tareas_pendientes} tarea(s) necesitan atención", "fecha": str(hoy), "href": "/housekeeping"})
+        tareas_pendientes = db.query(TareaLimpieza).filter(TareaLimpieza.estado.in_(["PENDIENTE", "EN_PROGRESO"]), TareaLimpieza.fecha_tarea <= hoy.isoformat()).count()
+        if tareas_pendientes:
+            notificaciones.append({"id": "limpieza-pendiente", "tipo": "limpieza", "prioridad": "alta", "titulo": "Limpieza pendiente", "mensaje": f"{tareas_pendientes} tarea(s) necesitan atención", "fecha": str(hoy), "href": "/housekeeping"})
 
-    caja_abierta = db.query(SesionCaja).filter(SesionCaja.estado == "ABIERTA").count()
-    if caja_abierta:
-        notificaciones.append({"id": "caja-abierta", "tipo": "caja", "prioridad": "media", "titulo": "Caja abierta", "mensaje": f"{caja_abierta} sesión(es) de caja siguen abiertas", "fecha": str(hoy), "href": "/caja"})
+        caja_abierta = db.query(SesionCaja).filter(SesionCaja.estado == "ABIERTA").count()
+        if caja_abierta:
+            notificaciones.append({"id": "caja-abierta", "tipo": "caja", "prioridad": "media", "titulo": "Caja abierta", "mensaje": f"{caja_abierta} sesión(es) de caja siguen abiertas", "fecha": str(hoy), "href": "/caja"})
+
+    tareas_asignadas = (
+        db.query(TareaLimpieza)
+        .filter(
+            TareaLimpieza.asignada_a == usuario_actual.id,
+            TareaLimpieza.estado.in_(["PENDIENTE", "EN_PROGRESO", "INSPECCION"]),
+        )
+        .order_by(TareaLimpieza.fecha_tarea, TareaLimpieza.prioridad)
+        .all()
+    )
+    for tarea in tareas_asignadas:
+        habitacion = db.query(Habitacion).filter(Habitacion.id == tarea.habitacion_id).first()
+        prioridad = "alta" if tarea.prioridad.lower() == "alta" else "media"
+        estado = {
+            "PENDIENTE": "pendiente",
+            "EN_PROGRESO": "en progreso",
+            "INSPECCION": "en inspección",
+        }.get(tarea.estado, tarea.estado.lower())
+        notificaciones.append({
+            "id": f"tarea-limpieza-{tarea.id}-{tarea.estado}",
+            "tipo": "limpieza",
+            "prioridad": prioridad,
+            "titulo": "Tarea de limpieza asignada",
+            "mensaje": f"Habitación {habitacion.numero if habitacion else 'sin asignar'} · {estado}",
+            "fecha": str(tarea.fecha_tarea),
+            "href": "/housekeeping",
+        })
 
     orden = {"alta": 0, "media": 1, "baja": 2}
     return sorted(notificaciones, key=lambda item: (orden[item["prioridad"]], item["fecha"]))[:100]
@@ -361,7 +390,7 @@ def salidas_del_dia(
     _: Usuario = Depends(PersonalUsuario),
 ):
     """Devuelve salidas para el rango [fecha, fecha+dias). Por defecto: desde hoy hasta 7 días."""
-    inicio = fecha or date.today()
+    inicio = fecha or fecha_hotel()
     fin = inicio + timedelta(days=dias)
     reservas = (
         db.query(Reserva)
@@ -398,10 +427,10 @@ def salidas_del_dia(
 def reporte_cuentas_por_cobrar(
     hasta: date = Query(None),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(GerenteUsuario),
+    _: Usuario = Depends(ReportesUsuario),
 ):
     """Aging de cuentas por cobrar: reservas con saldo pendiente agrupadas por tramo de vencimiento."""
-    fecha_limite = hasta or date.today()
+    fecha_limite = hasta or fecha_hotel()
 
     reservas_con_saldo = (
         db.query(Reserva)
@@ -463,10 +492,10 @@ def reporte_cuentas_por_cobrar(
 def reporte_housekeeping(
     fecha: date = Query(None),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(GerenteUsuario),
+    _: Usuario = Depends(ReportesUsuario),
 ):
     """Productividad de housekeeping por camarera en una fecha."""
-    dia = fecha or date.today()
+    dia = fecha or fecha_hotel()
 
     tareas = db.query(TareaLimpieza).filter(TareaLimpieza.fecha_tarea == dia).all()
 
@@ -534,7 +563,7 @@ def reporte_ingresos_detallado(
     desde: date = Query(...),
     hasta: date = Query(...),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(GerenteUsuario),
+    _: Usuario = Depends(ReportesUsuario),
 ):
     """Ingresos desglosados por canal de venta y tipo de habitación."""
     reservas = db.query(Reserva).filter(
@@ -616,7 +645,7 @@ def reporte_forecast(
     desde: date = Query(...),
     hasta: date = Query(...),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(GerenteUsuario),
+    _: Usuario = Depends(ReportesUsuario),
 ):
     """Forecast simple: ocupación e ingresos estimados basados en reservas confirmadas/pendientes."""
     reservas = db.query(Reserva).filter(
@@ -662,7 +691,7 @@ def reporte_ventas(
     desde: date = Query(...),
     hasta: date = Query(...),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(GerenteUsuario),
+    _: Usuario = Depends(ReportesUsuario),
 ):
     inicio = datetime.combine(desde, datetime.min.time())
     fin = datetime.combine(hasta, datetime.max.time())
@@ -723,7 +752,7 @@ def reporte_libro_huespedes(
     desde: date = Query(...),
     hasta: date = Query(...),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(GerenteUsuario),
+    _: Usuario = Depends(ReportesUsuario),
 ):
     """Libro de Huéspedes legal: registro numerado de todas las estancias en el período."""
     reservas = db.query(Reserva).filter(
@@ -771,7 +800,7 @@ def reporte_conciliacion_caja(
     desde: date = Query(...),
     hasta: date = Query(...),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(GerenteUsuario),
+    _: Usuario = Depends(ReportesUsuario),
 ):
     """Conciliación de caja: arqueos, diferencias y estado por sesión."""
     sesiones = db.query(SesionCaja).options(
@@ -795,7 +824,7 @@ def reporte_conciliacion_caja(
         total_diferencias += diferencia
 
         items.append(ConciliacionCajaItem(
-            fecha=s.abierta_en.date() if s.abierta_en else date.today(),
+            fecha=s.abierta_en.astimezone(ZONA_HOTEL).date() if s.abierta_en else fecha_hotel(),
             sesion_id=s.id,
             cajero=s.nombre_usuario or s.usuario_id[:8],
             monto_apertura=float(s.monto_apertura or 0),
@@ -822,7 +851,7 @@ def reporte_ejecutivo(
     hasta: date = Query(...),
     granularidad: str = Query("mensual", description="diario | semanal | mensual"),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(GerenteUsuario),
+    _: Usuario = Depends(ReportesUsuario),
 ):
     """Dashboard ejecutivo: RevPAR, ADR, Ocupación, GOPPAR por período."""
     reservas = db.query(Reserva).filter(
@@ -1085,7 +1114,7 @@ def _exportar_generico(tipo: str, formato: str, desde: date, hasta: date, db: Se
     else:
         raise HTTPException(status_code=400, detail="Formato no válido: xlsx | pdf")
 
-    filename = f"{tipo}_{date.today().isoformat()}.{extension}"
+    filename = f"{tipo}_{fecha_hotel().isoformat()}.{extension}"
     return StreamingResponse(
         BytesIO(contenido),
         media_type=media_type,
@@ -1126,6 +1155,6 @@ def exportar_reporte(
     desde: date = Query(...),
     hasta: date = Query(...),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(GerenteUsuario),
+    _: Usuario = Depends(ReportesUsuario),
 ):
     return _exportar_generico(tipo, formato, desde, hasta, db, _)

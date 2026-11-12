@@ -50,9 +50,11 @@ def listar_tareas_limpieza(
     fecha: str | None = Query(None, alias="fecha_tarea"),
     tipo_limpieza: str | None = Query(None),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(LimpiezaUsuario),
+    usuario_actual: Usuario = Depends(LimpiezaUsuario),
 ):
     consulta = db.query(TareaLimpieza)
+    if usuario_actual.rol == "limpieza":
+        consulta = consulta.filter(TareaLimpieza.asignada_a == usuario_actual.id)
     if estado:
         consulta = consulta.filter(TareaLimpieza.estado == estado)
     if habitacion_id:
@@ -81,6 +83,22 @@ def crear_tarea_limpieza(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Habitacion no encontrada",
         )
+
+    if datos.asignada_a:
+        personal = (
+            db.query(Usuario)
+            .filter(
+                Usuario.id == datos.asignada_a,
+                Usuario.rol == "limpieza",
+                Usuario.estado == "activo",
+            )
+            .first()
+        )
+        if not personal:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="La tarea solo puede asignarse a personal activo con rol de limpieza",
+            )
 
     tarea = TareaLimpieza(**datos.model_dump())
     db.add(tarea)
@@ -125,6 +143,22 @@ def actualizar_tarea_limpieza(
     }
 
     datos_actualizar = datos.model_dump(exclude_unset=True)
+
+    if "asignada_a" in datos_actualizar and datos_actualizar["asignada_a"]:
+        personal = (
+            db.query(Usuario)
+            .filter(
+                Usuario.id == datos_actualizar["asignada_a"],
+                Usuario.rol == "limpieza",
+                Usuario.estado == "activo",
+            )
+            .first()
+        )
+        if not personal:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="La tarea solo puede asignarse a personal activo con rol de limpieza",
+            )
 
     if "estado" in datos_actualizar:
         nuevo_estado = datos_actualizar["estado"]

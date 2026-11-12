@@ -15,6 +15,7 @@ from app.modules.estadias.esquemas import (
 )
 from app.modules.reservas.modelos import Reserva
 from app.modules.habitaciones.modelos import Habitacion
+from app.modules.reservas.router import _tiene_conflicto, _bloquear_habitacion
 from app.modules.limpieza.modelos import TareaLimpieza
 from app.modules.facturacion.modelos import Cargo
 from app.modules.configuracion.modelos import HotelConfig
@@ -52,14 +53,11 @@ def extender_estadia(
             detail="La nueva fecha de salida debe ser posterior a la actual",
         )
 
-    conflicto = db.query(Reserva).filter(
-        Reserva.id != reserva_id,
-        Reserva.habitacion_id == reserva.habitacion_id,
-        Reserva.estado.in_(("PENDIENTE", "CONFIRMADA", "CHECKED_IN")),
-        Reserva.fecha_entrada < datos.nueva_fecha_salida,
-        Reserva.fecha_salida > reserva.fecha_salida,
-    ).first()
-    if conflicto:
+    _bloquear_habitacion(db, reserva.habitacion_id)
+    if _tiene_conflicto(
+        db, reserva.fecha_entrada, datos.nueva_fecha_salida,
+        habitacion_id=reserva.habitacion_id, excluir_reserva_id=reserva_id,
+    ):
         raise HTTPException(
             status_code=409,
             detail="La habitacion no esta disponible para la nueva fecha de salida",
@@ -144,7 +142,7 @@ def realizar_check_in(
             detail=f"No se puede hacer check-in a una reserva en estado {reserva.estado}",
         )
 
-    habitacion = db.query(Habitacion).filter(Habitacion.id == datos.habitacion_id).first()
+    habitacion = _bloquear_habitacion(db, datos.habitacion_id)
     if not habitacion:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -154,6 +152,19 @@ def realizar_check_in(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="La habitacion no esta disponible",
+        )
+    if reserva.tipo_habitacion_id and habitacion.tipo_habitacion_id != reserva.tipo_habitacion_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La habitacion no corresponde al tipo reservado",
+        )
+    if _tiene_conflicto(
+        db, reserva.fecha_entrada, reserva.fecha_salida,
+        habitacion_id=habitacion.id, excluir_reserva_id=reserva.id,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="La habitacion ya esta ocupada o reservada en las fechas seleccionadas",
         )
 
     estadia_existente = (

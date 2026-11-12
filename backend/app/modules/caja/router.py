@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func
+from sqlalchemy import desc, func
 
 from app.core.database import get_db
 from app.core.dependencies import PersonalUsuario, CajaModulo
@@ -25,7 +25,6 @@ METODO_EFECTIVO = "efectivo"
 
 def _pagos_sesion(db: Session, sesion: SesionCaja) -> list[Pago]:
     filtros = [
-        Pago.recibido_por == sesion.usuario_id,
         Pago.pagado_en >= sesion.abierta_en,
         Pago.estado == "completado",
     ]
@@ -40,7 +39,6 @@ def _pagos_sesion(db: Session, sesion: SesionCaja) -> list[Pago]:
 
 def _ventas_particulares_sesion(db: Session, sesion: SesionCaja) -> list[VentaParticular]:
     filtros = [
-        VentaParticular.creado_por == sesion.usuario_id,
         VentaParticular.creado_en >= sesion.abierta_en,
     ]
     if sesion.cerrada_en:
@@ -82,15 +80,15 @@ def abrir_sesion_caja(
     sesion_activa = (
         db.query(SesionCaja)
         .filter(
-            SesionCaja.usuario_id == usuario_actual.id,
             SesionCaja.estado == "ABIERTA",
         )
+        .order_by(desc(SesionCaja.abierta_en))
         .first()
     )
     if sesion_activa:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Ya tienes una sesion de caja abierta",
+            detail="Ya existe una caja general abierta",
         )
 
     sesion = SesionCaja(
@@ -122,15 +120,15 @@ def obtener_sesion_activa(
     sesion = (
         db.query(SesionCaja)
         .filter(
-            SesionCaja.usuario_id == usuario_actual.id,
             SesionCaja.estado == "ABIERTA",
         )
+        .order_by(desc(SesionCaja.abierta_en))
         .first()
     )
     if not sesion:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No tienes una sesion de caja abierta",
+            detail="No hay una caja general abierta",
         )
     return SesionCajaResponse.model_validate(sesion)
 
@@ -147,8 +145,6 @@ def obtener_resumen_sesion(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Sesion de caja no encontrada",
         )
-    if sesion.usuario_id != usuario_actual.id and usuario_actual.rol not in ("admin", "gerente"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes consultar esta sesion de caja")
     desglose = _desglose_pagos(_pagos_sesion(db, sesion), _ventas_particulares_sesion(db, sesion))
     return {
         "sesion_id": sesion.id,

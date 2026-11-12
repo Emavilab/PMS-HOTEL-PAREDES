@@ -37,7 +37,11 @@ def login(datos: LoginRequest, request: Request, db: Session = Depends(get_db)):
             detail="Usuario inactivo",
         )
 
-    token = crear_token_acceso(data={"sub": usuario.id, "rol": usuario.rol})
+    token = crear_token_acceso(data={
+        "sub": usuario.id,
+        "rol": usuario.rol,
+        "sv": usuario.version_sesion,
+    })
 
     if usuario.contrasena.startswith(("$2a$", "$2b$", "$2y$")):
         usuario.contrasena = hash_password(datos.contrasena)
@@ -73,6 +77,11 @@ def verify_token(datos: VerifyTokenRequest, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Usuario no encontrado o inactivo",
+        )
+    if payload.get("sv", 0) != usuario.version_sesion:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="La sesión fue cerrada remotamente",
         )
     return UsuarioResponse.model_validate(usuario)
 
