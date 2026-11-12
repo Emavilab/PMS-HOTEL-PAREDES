@@ -33,6 +33,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
+    const handleUnauthorized = () => {
+      setUser(null)
+      setToken(null)
+      localStorage.removeItem("token")
+      localStorage.removeItem("user")
+      sessionStorage.removeItem("token")
+      sessionStorage.removeItem("user")
+    }
+    window.addEventListener("auth:unauthorized", handleUnauthorized)
+    return () => window.removeEventListener("auth:unauthorized", handleUnauthorized)
+  }, [])
+
+  useEffect(() => {
     const savedToken = localStorage.getItem("token") || sessionStorage.getItem("token")
     const savedUser = localStorage.getItem("user") || sessionStorage.getItem("user")
     if (savedToken && savedUser) {

@@ -8,7 +8,7 @@ import { Dialog } from "@/components/ui/dialog"
 import { ConfirmModal } from "@/components/ui/confirm-modal"
 import { Input } from "@/components/ui/input"
 import { Badge, statusBadge } from "@/components/ui/badge"
-import { AlertTriangle, CheckCircle2, Edit, Eye, EyeOff, Plus, Trash2, User, Users, Activity, RefreshCw } from "lucide-react"
+import { AlertTriangle, CheckCircle2, Edit, Eye, EyeOff, LogOut, Plus, Trash2, User, Users, Activity, RefreshCw } from "lucide-react"
 import { useAuth } from "@/hooks/useAuth"
 import type { Usuario } from "@/types"
 import { ErrorToast } from "@/components/ui/error-toast"
@@ -36,6 +36,15 @@ const MODULOS = [
   { key: "auditoria", label: "Auditoría", icon: "Shield" },
   { key: "configuracion", label: "Configuración", icon: "Settings" },
 ]
+const ACCIONES = [
+  { key: "ver", label: "Ver" },
+  { key: "crear", label: "Crear" },
+  { key: "editar", label: "Editar" },
+  { key: "eliminar", label: "Eliminar" },
+] as const
+const TODOS_LOS_PERMISOS = MODULOS.flatMap((modulo) =>
+  ACCIONES.map((accion) => `${modulo.key}:${accion.key}`)
+)
 
 const initialForm = {
   usuario: "",
@@ -64,6 +73,21 @@ type UsuarioActivo = { id: string; usuario: string; nombre_completo: string; rol
 
 export default function UsuariosPage() {
   const { user: currentUser } = useAuth()
+  const permisosActuales = currentUser?.permisos || []
+  const permisosUsuarios = permisosActuales.filter((permiso) => permiso === "usuarios" || permiso.startsWith("usuarios:"))
+  const puedeVerUsuarios =
+    currentUser?.rol === "admin" ||
+    permisosActuales.includes("usuarios") ||
+    permisosActuales.includes("usuarios:ver") ||
+    (currentUser?.rol === "gerente" && permisosUsuarios.length === 0)
+  const tieneAccion = (accion: string) =>
+    currentUser?.rol === "admin" ||
+    permisosActuales.includes("usuarios") ||
+    permisosActuales.includes(`usuarios:${accion}`) ||
+    (currentUser?.rol === "gerente" && permisosUsuarios.length === 0)
+  const puedeCrear = tieneAccion("crear")
+  const puedeEditar = tieneAccion("editar")
+  const puedeEliminar = tieneAccion("eliminar")
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
   const [usuariosActivos, setUsuariosActivos] = useState<UsuarioActivo[]>([])
   const [actualizado, setActualizado] = useState<Date | null>(null)
@@ -122,7 +146,9 @@ export default function UsuariosPage() {
       telefono: usuario.telefono || "",
       rol: usuario.rol,
       estado: usuario.estado,
-      permisos: usuario.permisos || [],
+      permisos: usuario.rol === "admin"
+        ? [...TODOS_LOS_PERMISOS]
+        : [...(usuario.permisos || [])],
     } : initialForm)
     setError("")
     setFormDialog(true)
@@ -132,7 +158,7 @@ export default function UsuariosPage() {
     const email = form.email.trim()
     const username = form.usuario.trim()
     const name = form.nombre_completo.trim()
-    const password = form.contrasena.trim()
+    const password = form.contrasena
 
     if (username.length < 3) return "El usuario debe tener al menos 3 caracteres"
     if (!/^[a-zA-Z0-9_-]+$/.test(username)) return "El usuario solo puede contener letras, numeros, guion y guion bajo"
@@ -140,8 +166,11 @@ export default function UsuariosPage() {
     if (!/^\S+@\S+\.\S+$/.test(email)) return "Ingresa un correo valido"
     if (!editingUser && password.length < 12) return "La contraseña debe tener al menos 12 caracteres"
     if (editingUser && password && password.length < 12) return "La nueva contraseña debe tener al menos 12 caracteres"
-    if (password && (!/[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/.test(password) || !/\d/.test(password))) return "La contraseña debe incluir letras y números"
-    if (password && (password.trim() !== password || new TextEncoder().encode(password).length > 256)) return "La contraseña no debe iniciar ni terminar con espacios y no puede superar 256 bytes"
+    if (password && !/[A-ZÁÉÍÓÚÜÑ]/.test(password)) return "La contraseña debe incluir al menos una letra mayúscula"
+    if (password && !/[a-záéíóúüñ]/.test(password)) return "La contraseña debe incluir al menos una letra minúscula"
+    if (password && !/\d/.test(password)) return "La contraseña debe incluir al menos un número"
+    if (password && !/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9\s]/.test(password)) return "La contraseña debe incluir al menos un carácter especial"
+    if (password && (/\s/.test(password) || new TextEncoder().encode(password).length > 256)) return "La contraseña no puede contener espacios y no puede superar 256 bytes"
     if (!roles.some((role) => role.value === form.rol)) return "Selecciona un tipo de usuario valido"
     if (!['activo', 'inactivo'].includes(form.estado)) return "Selecciona un estado valido"
     return ""
@@ -149,6 +178,10 @@ export default function UsuariosPage() {
 
   function saveUser(e: FormEvent) {
     e.preventDefault()
+    if (editingUser ? !puedeEditar : !puedeCrear) {
+      setError(editingUser ? "No tienes permiso para editar usuarios" : "No tienes permiso para crear usuarios")
+      return
+    }
     const validation = validateForm()
     if (validation) {
       setError(validation)
@@ -180,7 +213,7 @@ export default function UsuariosPage() {
         estado: form.estado,
         permisos: form.permisos,
       }
-      if (form.contrasena.trim()) payload.contrasena = form.contrasena.trim()
+      if (form.contrasena) payload.contrasena = form.contrasena
       if (!editingUser) delete payload.estado
 
       if (editingUser) await api.usuarios.actualizar(editingUser.id, payload)
@@ -197,6 +230,10 @@ export default function UsuariosPage() {
   }
 
   function deleteUser(usuario: Usuario) {
+    if (!puedeEliminar) {
+      setError("No tienes permiso para eliminar usuarios")
+      return
+    }
     setConfirm({
       open: true,
       title: "Eliminar usuario",
@@ -219,13 +256,40 @@ export default function UsuariosPage() {
     })
   }
 
+  function revokeSession(usuario: Usuario) {
+    if (!puedeEditar || usuario.id === currentUser?.id) {
+      setError(usuario.id === currentUser?.id ? "No puedes cerrar tu propia sesión desde esta pantalla" : "No tienes permiso para cerrar sesiones")
+      return
+    }
+    setConfirm({
+      open: true,
+      title: "Cerrar sesión remotamente",
+      message: `Se cerrarán inmediatamente todas las sesiones activas de ${usuario.nombre_completo}. Tendrá que iniciar sesión nuevamente.`,
+      confirmLabel: "Cerrar sesión",
+      variant: "destructive",
+      action: async () => {
+        setSaving(true)
+        setError("")
+        try {
+          await api.usuarios.revocarSesion(usuario.id)
+          setSuccess("Sesiones del usuario cerradas correctamente")
+          setUsuariosActivos((actuales) => actuales.filter((activo) => activo.id !== usuario.id))
+        } catch (err: any) {
+          setError(err.message || "No se pudieron cerrar las sesiones")
+        } finally {
+          setSaving(false)
+        }
+      },
+    })
+  }
+
   async function confirmAction() {
     if (!confirm) return
     await confirm.action()
     setConfirm(null)
   }
 
-  if (currentUser?.rol !== "admin") {
+  if (!puedeVerUsuarios) {
     return <p className="text-gray-500">No tienes permisos para ver esta pagina.</p>
   }
 
@@ -251,7 +315,7 @@ export default function UsuariosPage() {
                 type={showPassword ? "text" : "password"}
                 value={form.contrasena}
                 onChange={(e) => setForm({ ...form, contrasena: e.target.value })}
-                placeholder={editingUser ? "Dejar igual" : "12 caracteres, letras y números"}
+                placeholder={editingUser ? "Dejar igual" : "Mínimo 12, mayúscula, minúscula, número y símbolo"}
                 className="pr-11"
               />
               <button
@@ -264,6 +328,9 @@ export default function UsuariosPage() {
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
+            <p className="mt-1 text-xs text-gray-500">
+              Mínimo 12 caracteres: mayúscula, minúscula, número y carácter especial. Sin espacios.
+            </p>
           </Field>
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -286,42 +353,61 @@ export default function UsuariosPage() {
   }
 
   function renderPermisosTab() {
+    function tieneAccion(modulo: string, accion: string) {
+      return form.permisos.includes(modulo) || form.permisos.includes(`${modulo}:${accion}`)
+    }
+
+    function cambiarAccion(modulo: string, accion: string, habilitado: boolean) {
+      const permiso = `${modulo}:${accion}`
+      const permisosSinModulo = form.permisos.filter((actual) => actual !== modulo)
+      const permisos = habilitado
+        ? Array.from(new Set([...permisosSinModulo, permiso]))
+        : permisosSinModulo.filter((actual) => actual !== permiso)
+      setForm({ ...form, permisos })
+    }
+
+    function seleccionarTodos() {
+      setForm({
+        ...form,
+        permisos: MODULOS.flatMap((modulo) => ACCIONES.map((accion) => `${modulo.key}:${accion.key}`)),
+      })
+    }
+
     return (
       <div className="space-y-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-gray-500">
-            Selecciona los módulos a los que este usuario tendrá acceso. Si eliges permisos, se aplicarán como restricción adicional al rol.
+            Define qué puede hacer este usuario en cada módulo. Si no seleccionas permisos, se conserva el acceso completo permitido por su rol.
           </p>
           <span className="shrink-0 text-xs font-medium text-gray-500">
-            {form.permisos.length} de {MODULOS.length} seleccionados
+            {form.permisos.length} permisos configurados
           </span>
         </div>
         <div className="flex gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => setForm({ ...form, permisos: MODULOS.map((modulo) => modulo.key) })}>
+          <Button type="button" variant="outline" size="sm" onClick={seleccionarTodos}>
             Seleccionar todos
           </Button>
           <Button type="button" variant="outline" size="sm" onClick={() => setForm({ ...form, permisos: [] })}>
             Limpiar permisos
           </Button>
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 max-h-96 overflow-y-auto p-2 border rounded-md">
+        <div className="max-h-96 overflow-y-auto rounded-md border">
           {MODULOS.map((modulo) => (
-            <label key={modulo.key} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.permisos.includes(modulo.key)}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    permisos: e.target.checked
-                      ? [...form.permisos, modulo.key]
-                      : form.permisos.filter((p) => p !== modulo.key),
-                  })
-                }
-                className="h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-              />
+            <div key={modulo.key} className="grid grid-cols-[1fr_repeat(4,5rem)] items-center gap-2 border-b p-3 last:border-b-0 hover:bg-gray-50">
               <span className="text-sm font-medium">{modulo.label}</span>
-            </label>
+              {ACCIONES.map((accion) => (
+                <label key={accion.key} className="flex flex-col items-center gap-1 text-[11px] text-gray-500">
+                  <span>{accion.label}</span>
+                  <input
+                    type="checkbox"
+                    checked={tieneAccion(modulo.key, accion.key)}
+                    onChange={(e) => cambiarAccion(modulo.key, accion.key, e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    aria-label={`${accion.label} ${modulo.label}`}
+                  />
+                </label>
+              ))}
+            </div>
           ))}
         </div>
       </div>
@@ -335,7 +421,7 @@ export default function UsuariosPage() {
           <h1 className="text-2xl font-bold">Usuarios</h1>
           <p className="text-sm text-gray-500">Administra accesos, tipos de usuario y revisa quién está conectado.</p>
         </div>
-        <Button onClick={() => openForm()}>
+        <Button onClick={() => openForm()} disabled={!puedeCrear} title={!puedeCrear ? "Solo tienes permiso de ver usuarios" : "Crear usuario"}>
           <Plus className="mr-2 h-4 w-4" /> Nuevo usuario
         </Button>
       </div>
@@ -397,8 +483,9 @@ export default function UsuariosPage() {
                       <td className="p-4"><Badge {...statusBadge(usuario.estado)} /></td>
                       <td className="p-4">
                         <div className="flex justify-end gap-1">
-                          <Button size="icon" variant="ghost" onClick={() => openForm(usuario)}><Edit className="h-4 w-4" /></Button>
-                          <Button size="icon" variant="ghost" onClick={() => deleteUser(usuario)} disabled={usuario.id === currentUser.id || usuario.es_superadmin}>
+                          <Button size="icon" variant="ghost" onClick={() => openForm(usuario)} disabled={!puedeEditar} title={!puedeEditar ? "Solo tienes permiso de ver usuarios" : "Editar usuario"}><Edit className="h-4 w-4" /></Button>
+                          <Button size="icon" variant="ghost" onClick={() => revokeSession(usuario)} disabled={!puedeEditar || usuario.id === currentUser?.id} title={usuario.id === currentUser?.id ? "No puedes cerrar tu propia sesión aquí" : "Cerrar sesión remotamente"}><LogOut className="h-4 w-4 text-amber-600" /></Button>
+                          <Button size="icon" variant="ghost" onClick={() => deleteUser(usuario)} disabled={!puedeEliminar || usuario.id === currentUser?.id || usuario.es_superadmin} title={!puedeEliminar ? "No tienes permiso para eliminar usuarios" : "Eliminar usuario"}>
                             <Trash2 className="h-4 w-4 text-red-600" />
                           </Button>
                         </div>
@@ -452,7 +539,7 @@ export default function UsuariosPage() {
               >
                 Cancelar
               </Button>
-              <Button type="submit" disabled={saving}>
+              <Button type="submit" disabled={saving || (editingUser ? !puedeEditar : !puedeCrear)} title={!(editingUser ? puedeEditar : puedeCrear) ? "Solo tienes permiso de ver usuarios" : undefined}>
                 {editingUser ? "Guardar cambios" : "Crear usuario"}
               </Button>
             </div>

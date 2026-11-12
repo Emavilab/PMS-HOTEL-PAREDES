@@ -1,3 +1,9 @@
+/**
+ * Cliente HTTP centralizado del frontend.
+ *
+ * Adjunta el JWT, convierte errores de la API en mensajes utilizables por la
+ * interfaz y notifica globalmente cuando el backend invalida una sesión.
+ */
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
 function obtenerToken(): string | null {
@@ -11,6 +17,8 @@ async function peticion<T>(
   endpoint: string,
   options: RequestInit & { responseType?: "blob" } = {}
 ): Promise<T> {
+  // Mantener la lectura de ambos almacenamientos permite respetar
+  // la opción "recordarme" elegida durante el inicio de sesión.
   const token = obtenerToken()
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -21,6 +29,14 @@ async function peticion<T>(
   }
 
   const res = await fetch(`${API_URL}${endpoint}`, { ...options, headers })
+
+  if (res.status === 401 && typeof window !== "undefined") {
+    localStorage.removeItem("token")
+    localStorage.removeItem("user")
+    sessionStorage.removeItem("token")
+    sessionStorage.removeItem("user")
+    window.dispatchEvent(new CustomEvent("auth:unauthorized"))
+  }
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ detail: res.statusText }))
@@ -63,6 +79,8 @@ export const api = {
       peticion<any>("/usuarios", { method: "POST", body: JSON.stringify(datos) }),
     actualizar: (id: string, datos: any) =>
       peticion<any>(`/usuarios/${id}`, { method: "PUT", body: JSON.stringify(datos) }),
+    revocarSesion: (id: string) =>
+      peticion<void>(`/usuarios/${id}/revocar-sesion`, { method: "POST" }),
     obtener: (id: string) => peticion<any>(`/usuarios/${id}`),
     eliminar: (id: string) => peticion<void>(`/usuarios/${id}`, { method: "DELETE" }),
   },

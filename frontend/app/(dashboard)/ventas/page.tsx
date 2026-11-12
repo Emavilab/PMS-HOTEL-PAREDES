@@ -9,6 +9,7 @@ import { Badge, statusBadge } from "@/components/ui/badge"
 import { Dialog } from "@/components/ui/dialog"
 import { formatCurrency } from "@/lib/utils"
 import { ErrorToast } from "@/components/ui/error-toast"
+import { SuccessToast } from "@/components/ui/success-toast"
 import { ShoppingCart, Package, Plus, Minus, Trash2, Check, UserRound, BedDouble, Banknote, CreditCard, Wallet, Search } from "lucide-react"
 
 type Tab = "vender" | "productos"
@@ -127,7 +128,14 @@ function VenderTab() {
   }
 
   async function handleVender() {
-    if ((destino === "habitacion" && !selected) || carrito.length === 0) return
+    if (destino === "habitacion" && !selected) {
+      setError("Selecciona una habitación antes de registrar el consumo")
+      return
+    }
+    if (carrito.length === 0) {
+      setError("Agrega al menos un producto al carrito")
+      return
+    }
     setSaving(true)
     setError("")
     setSuccess("")
@@ -294,6 +302,7 @@ function ProductosTab() {
   const [form, setForm] = useState({ nombre: "", descripcion: "", precio_unitario: 0, categoria: "" })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
+  const [success, setSuccess] = useState("")
 
   const loadData = useCallback(() => {
     setLoading(true)
@@ -316,8 +325,12 @@ function ProductosTab() {
   }
 
   async function handleSave() {
-    if (!form.nombre || form.precio_unitario <= 0) {
-      setError("Nombre y precio requeridos")
+    if (!form.nombre.trim()) {
+      setError("El nombre del producto es obligatorio")
+      return
+    }
+    if (!Number.isFinite(form.precio_unitario) || form.precio_unitario <= 0) {
+      setError("El precio debe ser mayor que cero")
       return
     }
     setSaving(true)
@@ -325,8 +338,10 @@ function ProductosTab() {
     try {
       if (editId) {
         await api.ventas.actualizarProducto(editId, form)
+        setSuccess("Producto actualizado correctamente")
       } else {
         await api.ventas.crearProducto(form)
+        setSuccess("Producto creado correctamente")
       }
       setShowForm(false)
       loadData()
@@ -341,6 +356,7 @@ function ProductosTab() {
     if (!confirm("¿Eliminar este producto?")) return
     try {
       await api.ventas.eliminarProducto(id)
+      setSuccess("Producto eliminado correctamente")
       loadData()
     } catch (err: any) {
       setError(err.message)
@@ -355,6 +371,7 @@ function ProductosTab() {
       </div>
 
       <ErrorToast message={error} onClose={() => setError("")} />
+      <SuccessToast message={success} onClose={() => setSuccess("")} />
 
       <Dialog open={showForm} onClose={() => setShowForm(false)} title={editId ? "Editar Producto" : "Nuevo Producto"}>
         <div className="space-y-3">
@@ -418,5 +435,3 @@ function ProductosTab() {
     </div>
   )
 }
-
-
