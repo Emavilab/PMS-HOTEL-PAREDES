@@ -1,3 +1,9 @@
+"""Creación y sanitización centralizada de registros de auditoría.
+
+El contexto HTTP se guarda por solicitud para que los routers existentes
+capturen método, ruta, IP y agente de usuario sin repetir esa lógica.
+"""
+
 import json
 import re
 from contextvars import ContextVar
@@ -10,10 +16,12 @@ _request_context: ContextVar[object | None] = ContextVar("auditoria_request", de
 
 
 def establecer_contexto_request(request: object):
+    """Asocia la solicitud HTTP actual al contexto de la auditoría."""
     return _request_context.set(request)
 
 
 def limpiar_contexto_request(token) -> None:
+    """Restaura el contexto anterior al terminar una solicitud HTTP."""
     _request_context.reset(token)
 
 
@@ -38,6 +46,11 @@ def crear_registro_auditoria(
     valores_nuevos: Optional[dict] = None,
     direccion_ip: Optional[str] = None,
 ) -> RegistroAuditoria:
+    """Persiste una acción con actor, contexto HTTP y valores sanitizados.
+
+    Nunca se guardan contraseñas, tokens ni secretos en los valores
+    anteriores o nuevos, aunque un router los envíe accidentalmente.
+    """
     request = _request_context.get()
     request_url = getattr(request, "url", None)
     request_headers = getattr(request, "headers", {})

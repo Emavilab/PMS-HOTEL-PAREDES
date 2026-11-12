@@ -1,3 +1,9 @@
+"""Punto de entrada de la API FastAPI del PMS Hotel Paredes.
+
+Registra middleware, routers, archivos estáticos y compatibilidad de esquema
+para instalaciones existentes mientras se consolidan las migraciones formales.
+"""
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -64,6 +70,7 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 @app.middleware("http")
 async def contexto_auditoria(request, call_next):
+    """Hace disponible el contexto HTTP para cada registro de auditoría."""
     token = establecer_contexto_request(request)
     try:
         return await call_next(request)
@@ -73,6 +80,7 @@ async def contexto_auditoria(request, call_next):
 
 @app.on_event("startup")
 def on_startup():
+    """Inicializa tablas y aplica ajustes de compatibilidad al arrancar."""
     Base.metadata.create_all(bind=engine)
     agregar_columnas_reserva_si_faltan()
     migrar_pisos_habitaciones()
@@ -81,6 +89,7 @@ def on_startup():
 
 
 def agregar_columnas_auditoria():
+    """Añade columnas de contexto a instalaciones anteriores del sistema."""
     columnas = {col["name"] for col in inspect(engine).get_columns("registros_auditoria")}
     nuevas = {
         "nombre_usuario": "VARCHAR(255)",
@@ -97,6 +106,7 @@ def agregar_columnas_auditoria():
 
 
 def agregar_columnas_reserva_si_faltan():
+    """Completa columnas introducidas por las versiones recientes del PMS."""
     columnas = {col["name"] for col in inspect(engine).get_columns("reservas")}
     alteraciones = []
     if "tiene_vehiculo" not in columnas:

@@ -1,3 +1,9 @@
+"""Primitivas de autenticación, autorización y control de sesión.
+
+Las contraseñas se almacenan con scrypt y los JWT incluyen la versión de
+sesión del usuario para permitir revocaciones remotas inmediatas.
+"""
+
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 import json
@@ -20,6 +26,7 @@ seguridad = HTTPBearer()
 
 
 def hash_password(password: str) -> str:
+    """Genera un hash scrypt con una sal aleatoria por contraseña."""
     salt = os.urandom(16)
     digest = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=2**15, r=8, p=1, dklen=64, maxmem=64 * 1024 * 1024)
     salt_text = base64.urlsafe_b64encode(salt).decode("ascii").rstrip("=")
@@ -28,6 +35,7 @@ def hash_password(password: str) -> str:
 
 
 def verificar_password(password: str, password_hash: str) -> bool:
+    """Comprueba hashes scrypt y mantiene compatibilidad con bcrypt legado."""
     if password_hash.startswith(("$2a$", "$2b$", "$2y$")):
         import bcrypt
         try:
@@ -52,6 +60,7 @@ def verificar_password(password: str, password_hash: str) -> bool:
 
 
 def crear_token_acceso(data: dict, expira_delta: Optional[timedelta] = None) -> str:
+    """Crea un JWT firmado con una fecha de expiración configurable."""
     datos = data.copy()
     expira = datetime.now(timezone.utc) + (
         expira_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -61,6 +70,7 @@ def crear_token_acceso(data: dict, expira_delta: Optional[timedelta] = None) -> 
 
 
 def verificar_token(token: str) -> Optional[dict]:
+    """Decodifica un JWT y devuelve None si no es válido o expiró."""
     try:
         payload = jwt.decode(
             token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
@@ -75,6 +85,7 @@ def obtener_usuario_actual(
     credentials: HTTPAuthorizationCredentials = Depends(seguridad),
     db: Session = Depends(get_db),
 ) -> Usuario:
+    """Obtiene el usuario autenticado y valida estado y versión de sesión."""
     token = credentials.credentials
     payload = verificar_token(token)
     if payload is None:
@@ -104,6 +115,7 @@ def obtener_usuario_actual(
 
 
 def requerir_rol(*roles: str):
+    """Construye una dependencia que limita el endpoint a ciertos roles."""
     def verificador_rol(usuario_actual: Usuario = Depends(obtener_usuario_actual)):
         if usuario_actual.rol not in roles:
             raise HTTPException(
@@ -158,6 +170,7 @@ def tiene_lectura_compartida_recepcion(usuario: Usuario, request: Request) -> bo
 
 
 def requerir_modulo(modulo: str):
+    """Construye una dependencia para autorización por módulo y acción HTTP."""
     def verificar_modulo(
         request: Request,
         usuario: Usuario = Depends(obtener_usuario_actual),
@@ -199,6 +212,7 @@ def requerir_modulo(modulo: str):
 
 
 def requerir_permiso(modulo: str, accion: str):
+    """Construye una dependencia para un permiso granular específico."""
     permiso = f"{modulo}:{accion}"
     if permiso not in PERMISOS_VALIDOS:
         raise ValueError(f"Permiso no registrado: {permiso}")

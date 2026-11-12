@@ -60,18 +60,34 @@ def _tiene_conflicto(
     return consulta.first() is not None
 
 
+def _bloquear_habitacion(db: Session, habitacion_id: str) -> Habitacion | None:
+    return (
+        db.query(Habitacion)
+        .filter(Habitacion.id == habitacion_id)
+        .with_for_update()
+        .first()
+    )
+
+
+def _bloquear_tipo(db: Session, tipo_habitacion_id: str) -> None:
+    db.query(Habitacion).filter(
+        Habitacion.tipo_habitacion_id == tipo_habitacion_id,
+    ).with_for_update().all()
+
+
 def _habitaciones_disponibles_tipo(
     db: Session,
     fecha_entrada: date,
     fecha_salida: date,
     tipo_habitacion_id: str,
+    excluir_reserva_id: str | None = None,
 ) -> int:
     total = db.query(Habitacion).filter(
         Habitacion.tipo_habitacion_id == tipo_habitacion_id,
         Habitacion.estado_operativo == "DISPONIBLE",
     ).count()
 
-    ocupadas = (
+    consulta_ocupadas = (
         db.query(Reserva.habitacion_id)
         .join(Habitacion, Reserva.habitacion_id == Habitacion.id)
         .filter(
@@ -81,16 +97,21 @@ def _habitaciones_disponibles_tipo(
             Reserva.habitacion_id.isnot(None),
             Habitacion.tipo_habitacion_id == tipo_habitacion_id,
         )
-        .all()
     )
+    if excluir_reserva_id:
+        consulta_ocupadas = consulta_ocupadas.filter(Reserva.id != excluir_reserva_id)
+    ocupadas = consulta_ocupadas.all()
 
-    sin_asignar = db.query(func.count(Reserva.id)).filter(
+    consulta_sin_asignar = db.query(func.count(Reserva.id)).filter(
         Reserva.estado.in_(ESTADOS_OCUPAN_INVENTARIO),
         Reserva.fecha_entrada < fecha_salida,
         Reserva.fecha_salida > fecha_entrada,
         Reserva.habitacion_id.is_(None),
         Reserva.tipo_habitacion_id == tipo_habitacion_id,
-    ).scalar() or 0
+    )
+    if excluir_reserva_id:
+        consulta_sin_asignar = consulta_sin_asignar.filter(Reserva.id != excluir_reserva_id)
+    sin_asignar = consulta_sin_asignar.scalar() or 0
 
     return max(0, total - len({r[0] for r in ocupadas}) - int(sin_asignar))
 
@@ -211,9 +232,7 @@ def crear_reserva(
             )
 
     if datos.habitacion_id:
-        habitacion = (
-            db.query(Habitacion).filter(Habitacion.id == datos.habitacion_id).first()
-        )
+        habitacion = _bloquear_habitacion(db, datos.habitacion_id)
         if not habitacion:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -227,6 +246,7 @@ def crear_reserva(
                 detail="La habitacion no esta disponible en las fechas seleccionadas",
             )
     elif datos.tipo_habitacion_id:
+        _bloquear_tipo(db, datos.tipo_habitacion_id)
         disponibles = _habitaciones_disponibles_tipo(
             db, datos.fecha_entrada, datos.fecha_salida, datos.tipo_habitacion_id
         )
@@ -349,6 +369,9 @@ def actualizar_reserva(
         )
 
     if nueva_habitacion_id:
+        habitacion = _bloquear_habitacion(db, nueva_habitacion_id)
+        if not habitacion:
+            raise HTTPException(status_code=400, detail="Habitacion no encontrada")
         if _tiene_conflicto(
             db,
             nueva_entrada,
@@ -360,6 +383,17 @@ def actualizar_reserva(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="La habitacion no esta disponible en las fechas seleccionadas",
             )
+    elif datos.tipo_habitacion_id or datos.fecha_entrada or datos.fecha_salida:
+        nuevo_tipo_id = datos.tipo_habitacion_id or reserva.tipo_habitacion_id
+        if nuevo_tipo_id:
+            _bloquear_tipo(db, nuevo_tipo_id)
+            if _habitaciones_disponibles_tipo(
+                db, nueva_entrada, nueva_salida, nuevo_tipo_id, excluir_reserva_id=reserva_id
+            ) <= 0:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="No hay habitaciones disponibles de ese tipo en las fechas seleccionadas",
+                )
 
     for campo, valor in datos_actualizar.items():
         setattr(reserva, campo, valor)
@@ -408,6 +442,26 @@ def confirmar_reserva(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Solo se pueden confirmar reservas pendientes. Estado actual: {reserva.estado}",
         )
+    if reserva.habitacion_id:
+        _bloquear_habitacion(db, reserva.habitacion_id)
+        if _tiene_conflicto(
+            db, reserva.fecha_entrada, reserva.fecha_salida,
+            habitacion_id=reserva.habitacion_id, excluir_reserva_id=reserva.id,
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="La habitacion ya fue reservada para las fechas seleccionadas",
+            )
+    elif reserva.tipo_habitacion_id:
+        _bloquear_tipo(db, reserva.tipo_habitacion_id)
+        if _habitaciones_disponibles_tipo(
+            db, reserva.fecha_entrada, reserva.fecha_salida,
+            reserva.tipo_habitacion_id, excluir_reserva_id=reserva.id,
+        ) <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="No hay habitaciones disponibles de ese tipo en las fechas seleccionadas",
+            )
 
     estado_anterior = reserva.estado
     reserva.estado = "CONFIRMADA"

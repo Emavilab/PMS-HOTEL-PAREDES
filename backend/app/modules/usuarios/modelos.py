@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, DateTime, Boolean, Text
+from sqlalchemy import Column, String, DateTime, Boolean, Text, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
@@ -18,6 +18,7 @@ class Usuario(Base):
     estado: Mapped[str] = mapped_column(String(50), nullable=False, default="activo")
     es_superadmin: Mapped[bool] = mapped_column(Boolean, default=False)
     permisos: Mapped[str] = mapped_column(Text, nullable=True, default="[]")
+    version_sesion: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     ultimo_acceso: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     ultima_actividad: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     creado_en: Mapped[datetime] = mapped_column(
