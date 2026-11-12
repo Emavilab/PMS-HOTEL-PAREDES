@@ -97,6 +97,40 @@ Casos donde sí conviene reiniciar:
 - Cambias configuración de Docker.
 - Hay migraciones o cambios grandes de base de datos.
 
+## Respaldos
+
+El respaldo incluye la base de datos PostgreSQL y la carpeta `backend/uploads`.
+Requiere que `pg_dump` y `pg_restore` estén disponibles en el `PATH`.
+
+Crear un respaldo manual en Windows:
+
+```powershell
+.\scripts\backup.ps1
+```
+
+Los archivos se guardan en `backups/` y se conservan 30 días. Para cambiar la
+retención:
+
+```powershell
+.\scripts\backup.ps1 -RetentionDays 90
+```
+
+Para automatizarlo, crea una tarea diaria en el Programador de tareas de
+Windows que ejecute `powershell.exe` con:
+
+```text
+-NoProfile -ExecutionPolicy Bypass -File "C:\xampp\htdocs\PMS HOTEL PAREDES\scripts\backup.ps1"
+```
+
+Restaurar requiere confirmación explícita porque reemplaza los datos actuales:
+
+```powershell
+.\scripts\restore.ps1 -BackupFile ".\backups\hotel_paredes_2026-11-08_020000.zip" -ConfirmRestore
+```
+
+Conserva una copia semanal fuera del equipo. No guardes archivos `.env` ni
+credenciales junto con los respaldos.
+
 ## Estructura del proyecto
 
 ```

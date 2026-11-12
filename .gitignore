@@ -19,6 +19,9 @@ build/
 *.sqlite
 *.sqlite3
 
+# Generated database and file backups
+/backups/
+
 # Environment files (contains secrets)
 .env
 .env.local

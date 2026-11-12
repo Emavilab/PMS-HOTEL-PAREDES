@@ -9,6 +9,7 @@ from app.core.config import settings
 from sqlalchemy import inspect, text
 
 from app.core.database import Base, engine, SessionLocal
+from app.common.auditoria import establecer_contexto_request, limpiar_contexto_request
 from app.modules.auth.router import router as auth_router
 from app.modules.usuarios.router import router as usuarios_router
 from app.modules.habitaciones.router import router_tipos, router_habitaciones, router_pisos, router_pagos
@@ -59,6 +60,15 @@ app.include_router(configuracion_router)
 uploads_dir = Path("uploads")
 uploads_dir.mkdir(exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
+
+@app.middleware("http")
+async def contexto_auditoria(request, call_next):
+    token = establecer_contexto_request(request)
+    try:
+        return await call_next(request)
+    finally:
+        limpiar_contexto_request(token)
 
 
 @app.on_event("startup")
@@ -131,6 +141,9 @@ def agregar_columnas_reserva_si_faltan():
     if "ultima_actividad" not in columnas_usuarios:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE usuarios ADD COLUMN ultima_actividad DATETIME"))
+    if "version_sesion" not in columnas_usuarios:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE usuarios ADD COLUMN version_sesion INTEGER NOT NULL DEFAULT 0"))
 
     columnas_limpieza = {col["name"] for col in inspect(engine).get_columns("tareas_limpieza")}
     if "tipo_limpieza" not in columnas_limpieza:

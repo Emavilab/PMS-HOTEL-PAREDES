@@ -1,10 +1,20 @@
 import json
 import re
+from contextvars import ContextVar
 from typing import Optional
 from sqlalchemy.orm import Session
 from app.modules.auditoria.modelos import RegistroAuditoria
 
 _CAMPOS_PRIVADOS = re.compile(r"password|contrasena|token|secret|clave|authorization", re.IGNORECASE)
+_request_context: ContextVar[object | None] = ContextVar("auditoria_request", default=None)
+
+
+def establecer_contexto_request(request: object):
+    return _request_context.set(request)
+
+
+def limpiar_contexto_request(token) -> None:
+    _request_context.reset(token)
 
 
 def _sanitizar(valor):
@@ -28,6 +38,10 @@ def crear_registro_auditoria(
     valores_nuevos: Optional[dict] = None,
     direccion_ip: Optional[str] = None,
 ) -> RegistroAuditoria:
+    request = _request_context.get()
+    request_url = getattr(request, "url", None)
+    request_headers = getattr(request, "headers", {})
+    request_client = getattr(request, "client", None)
     actor = None
     if usuario_id:
         try:
@@ -43,12 +57,13 @@ def crear_registro_auditoria(
         entidad_id=entidad_id,
         valores_anteriores=json.dumps(_sanitizar(valores_anteriores), default=str) if valores_anteriores else None,
         valores_nuevos=json.dumps(_sanitizar(valores_nuevos), default=str) if valores_nuevos else None,
-        direccion_ip=direccion_ip,
+        direccion_ip=direccion_ip or (request_client.host if request_client else None),
         nombre_usuario=actor.nombre_completo if actor else None,
         rol_usuario=actor.rol if actor else None,
-        metodo_http=None,
-        ruta=None,
-        agente_usuario=None,
+        metodo_http=getattr(request, "method", None),
+        ruta=str(request_url.path) if request_url else None,
+        estado_http=200,
+        agente_usuario=request_headers.get("user-agent") if request_headers else None,
     )
     db.add(registro)
     db.commit()
