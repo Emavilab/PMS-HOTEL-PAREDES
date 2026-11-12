@@ -170,6 +170,46 @@ hotel-paredes-pms/
 
 ## API endpoints
 
+## Guía rápida de arquitectura
+
+### Flujo de una solicitud autenticada
+
+1. El frontend centraliza las llamadas en `frontend/lib/api.ts`.
+2. El backend valida el JWT y obtiene el usuario mediante las dependencias de
+   `backend/app/core/seguridad.py`.
+3. La autorización se comprueba por rol, módulo y permiso granular.
+4. El middleware de `backend/app/main.py` asocia la solicitud al contexto de
+   auditoría.
+5. Las operaciones importantes registran actor, cambios y contexto HTTP en
+   `backend/app/common/auditoria.py`.
+
+### Seguridad de cuentas
+
+- Las contraseñas nunca se guardan en texto plano; se usa scrypt.
+- Los tokens incluyen la versión de sesión del usuario.
+- Revocar una sesión incrementa esa versión e invalida los tokens anteriores.
+- Las respuestas HTTP 401 limpian la sesión local del frontend y redirigen al
+  inicio de sesión.
+- Los campos sensibles se redactan antes de guardar auditorías.
+
+### Flujo de reservas
+
+La disponibilidad se valida al crear, actualizar, confirmar, hacer check-in y
+extender una estadía. PostgreSQL bloquea temporalmente la habitación o el tipo
+de habitación durante la comprobación para evitar reservas simultáneas sobre el
+mismo inventario. Dos reservas pueden compartir la fecha de salida/entrada del
+mismo día, pero no pueden solaparse.
+
+### Convenciones para documentar código
+
+- Usa docstrings para explicar responsabilidades, invariantes y efectos
+  secundarios.
+- Evita comentarios que repitan literalmente el código.
+- Coloca la documentación junto al productor de la lógica, no solo en el
+  frontend que la consume.
+- Actualiza esta sección cuando cambie autenticación, reservas, auditoría o
+  respaldos.
+
 ### Autenticación
 - `POST /auth/login` - Iniciar sesión
 - `POST /auth/verify` - Verificar token

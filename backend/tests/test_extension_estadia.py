@@ -1,10 +1,10 @@
 from datetime import date, timedelta
 
-from app.core.dependencies import PersonalUsuario
+from app.core.dependencies import PersonalUsuario, ReservasModulo
 from app.modules.configuracion.modelos import HotelConfig
 from app.modules.estadias.modelos import Estadia
 from app.modules.facturacion.modelos import Cargo, Pago
-from app.modules.habitaciones.modelos import Habitacion, TipoHabitacion
+from app.modules.habitaciones.modelos import Habitacion, Piso, TipoHabitacion
 from app.modules.huespedes.modelos import Huesped
 from app.modules.reservas.modelos import Reserva
 from app.modules.usuarios.modelos import Usuario
@@ -28,8 +28,10 @@ def crear_estadia_activa():
         capacidad_maxima=2,
         precio_base=100,
     )
+    piso = Piso(nombre="Piso de prueba")
     habitacion = Habitacion(
         tipo_habitacion=tipo,
+        piso=piso,
         numero="T-01",
         estado_operativo="OCUPADA",
         estado_limpieza="LIMPIA",
@@ -68,11 +70,13 @@ def crear_estadia_activa():
 
 def preparar_cliente(client, usuario):
     client.app.dependency_overrides[PersonalUsuario] = lambda: usuario
+    client.app.dependency_overrides[ReservasModulo] = lambda: usuario
     return client
 
 
 def limpiar_override(client):
     client.app.dependency_overrides.pop(PersonalUsuario, None)
+    client.app.dependency_overrides.pop(ReservasModulo, None)
 
 
 def test_extender_estadia_conserva_pago_y_actualiza_saldo(client):

@@ -26,6 +26,12 @@ MODULOS_SISTEMA = [
 ]
 
 MODULOS_KEYS = [m["key"] for m in MODULOS_SISTEMA]
+ACCIONES_PERMISO = ("ver", "crear", "editar", "eliminar")
+PERMISOS_VALIDOS = set(MODULOS_KEYS) | {
+    f"{modulo}:{accion}"
+    for modulo in MODULOS_KEYS
+    for accion in ACCIONES_PERMISO
+}
 
 
 def validar_longitud_contrasena(valor: str) -> str:
@@ -33,8 +39,16 @@ def validar_longitud_contrasena(valor: str) -> str:
         raise ValueError("La contraseña debe tener al menos 12 caracteres")
     if len(valor.encode("utf-8")) > 256:
         raise ValueError("La contraseña no puede superar 256 bytes")
-    if valor.strip() != valor or not any(caracter.isalpha() for caracter in valor) or not any(caracter.isdigit() for caracter in valor):
-        raise ValueError("La contraseña debe incluir letras y números, sin espacios al inicio o al final")
+    if valor.strip() != valor or any(caracter.isspace() for caracter in valor):
+        raise ValueError("La contraseña no puede contener espacios")
+    if not any(caracter.isupper() for caracter in valor):
+        raise ValueError("La contraseña debe incluir al menos una letra mayúscula")
+    if not any(caracter.islower() for caracter in valor):
+        raise ValueError("La contraseña debe incluir al menos una letra minúscula")
+    if not any(caracter.isdigit() for caracter in valor):
+        raise ValueError("La contraseña debe incluir al menos un número")
+    if not any(not caracter.isalnum() for caracter in valor):
+        raise ValueError("La contraseña debe incluir al menos un carácter especial")
     return valor
 
 
@@ -78,7 +92,7 @@ class UsuarioCrear(BaseModel):
     def validar_permisos(cls, valor: list[str]) -> list[str]:
         if valor is None:
             return []
-        invalidos = [p for p in valor if p not in MODULOS_KEYS]
+        invalidos = [p for p in valor if p not in PERMISOS_VALIDOS]
         if invalidos:
             raise ValueError(f"Permisos inválidos: {', '.join(invalidos)}")
         return valor
@@ -139,7 +153,7 @@ class UsuarioActualizar(BaseModel):
     def validar_permisos(cls, valor: Optional[list[str]]) -> Optional[list[str]]:
         if valor is None:
             return valor
-        invalidos = [p for p in valor if p not in MODULOS_KEYS]
+        invalidos = [p for p in valor if p not in PERMISOS_VALIDOS]
         if invalidos:
             raise ValueError(f"Permisos inválidos: {', '.join(invalidos)}")
         return valor

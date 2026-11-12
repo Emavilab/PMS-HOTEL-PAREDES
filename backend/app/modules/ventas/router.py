@@ -252,6 +252,7 @@ def habitaciones_ocupadas(
             "total": r.total,
             "tiene_vehiculo": r.tiene_vehiculo,
             "detalle_vehiculo": r.detalle_vehiculo,
+            "telefono_huesped": r.huesped.telefono if r.huesped else None,
         })
     return resultado
 

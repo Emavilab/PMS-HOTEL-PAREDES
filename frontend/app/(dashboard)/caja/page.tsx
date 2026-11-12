@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog } from "@/components/ui/dialog"
 import { Badge, statusBadge } from "@/components/ui/badge"
-import { formatCurrency, formatDate, formatDateTime } from "@/lib/utils"
+import { formatCurrency, formatDate, formatDateTime, hotelDateTimeToISOString } from "@/lib/utils"
 import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, DollarSign, Printer } from "lucide-react"
 import { ErrorToast } from "@/components/ui/error-toast"
 
@@ -53,8 +53,8 @@ export default function CajaPage() {
       const desde = opts?.desde ?? filtroDesde
       const hasta = opts?.hasta ?? filtroHasta
       if (estado) params.estado = estado
-      if (desde) params.desde = new Date(desde + "T00:00:00").toISOString()
-      if (hasta) params.hasta = new Date(hasta + "T23:59:59").toISOString()
+      if (desde) params.desde = hotelDateTimeToISOString(desde, "00:00:00")
+      if (hasta) params.hasta = hotelDateTimeToISOString(hasta, "23:59:59")
 
       const data = await api.caja.listar(params)
       const metodos = await api.metodosPago.listar()
@@ -162,7 +162,7 @@ export default function CajaPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Caja</h1>
-          <p className="mt-1 text-sm text-gray-500">Control de efectivo en cajón: apertura, desglose por método y cierre con diferencia.</p>
+          <p className="mt-1 text-sm text-gray-500">Caja general del hotel: todas las operaciones cobradas se concentran en una sola sesión.</p>
         </div>
         {activeSession && (
           <Button variant="outline" onClick={() => abrirCorte(activeSession, "X")}>
@@ -388,10 +388,10 @@ export default function CajaPage() {
             </div>
             <div className="text-sm leading-6 text-gray-600">
               {confirmar === "abrir" ? (
-                <p>Se abrira una sesion de caja a tu nombre con fondo inicial de <span className="font-semibold">{formatCurrency(aperturaNum)}</span>.</p>
+                <p>Se abrira la caja general del hotel con fondo inicial de <span className="font-semibold">{formatCurrency(aperturaNum)}</span>. Todas las operaciones cobradas se registraran en esta caja.</p>
               ) : (
                 <>
-                  <p>Se cerrara la sesion de caja actual.</p>
+                  <p>Se cerrara la caja general actual para todos los usuarios.</p>
                   <div className="mt-2 rounded-md bg-gray-50 p-3 space-y-1">
                     <div className="flex justify-between"><span>Esperado en cajón:</span><span className="font-medium">{formatCurrency(esperadoCaja)}</span></div>
                     <div className="flex justify-between"><span>Efectivo declarado:</span><span className="font-medium">{formatCurrency(declaradoNum)}</span></div>

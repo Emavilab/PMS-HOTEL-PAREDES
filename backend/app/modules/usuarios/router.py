@@ -5,7 +5,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.dependencies import AdminUsuario, GerenteUsuario, UsuariosModulo
+from app.core.dependencies import (
+    GerenteUsuario,
+    UsuariosCrear,
+    UsuariosEditar,
+    UsuariosEliminar,
+    UsuariosModulo,
+    UsuariosVer,
+)
 from app.core.seguridad import hash_password, obtener_usuario_actual
 from app.common.auditoria import crear_registro_auditoria
 from app.modules.usuarios.modelos import Usuario
@@ -18,10 +25,10 @@ from app.modules.usuarios.esquemas import (
 router = APIRouter(prefix="/usuarios", tags=["Usuarios"])
 UMBRAL_ACTIVIDAD = timedelta(seconds=90)
 
-@router.get("", response_model=list[UsuarioResponse], dependencies=[Depends(UsuariosModulo)])
+@router.get("", response_model=list[UsuarioResponse], dependencies=[Depends(UsuariosModulo), Depends(UsuariosVer)])
 def listar_usuarios(
     db: Session = Depends(get_db),
-    usuario_actual: Usuario = Depends(GerenteUsuario),
+    usuario_actual: Usuario = Depends(obtener_usuario_actual),
 ):
     usuarios = db.query(Usuario).all()
     return [UsuarioResponse.model_validate(u) for u in usuarios]
@@ -55,12 +62,12 @@ def listar_usuarios_activos(
     } for usuario in usuarios]
 
 
-@router.post("", response_model=UsuarioResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(UsuariosModulo)])
+@router.post("", response_model=UsuarioResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(UsuariosModulo), Depends(UsuariosCrear)])
 def crear_usuario(
     datos: UsuarioCrear,
     request: Request,
     db: Session = Depends(get_db),
-    usuario_actual: Usuario = Depends(AdminUsuario),
+    usuario_actual: Usuario = Depends(obtener_usuario_actual),
 ):
     usuario_nombre = datos.usuario.lower()
     email = str(datos.email).lower()
@@ -99,11 +106,11 @@ def crear_usuario(
     return UsuarioResponse.model_validate(usuario)
 
 
-@router.get("/{usuario_id}", response_model=UsuarioResponse, dependencies=[Depends(UsuariosModulo)])
+@router.get("/{usuario_id}", response_model=UsuarioResponse, dependencies=[Depends(UsuariosModulo), Depends(UsuariosVer)])
 def obtener_usuario(
     usuario_id: str,
     db: Session = Depends(get_db),
-    usuario_actual: Usuario = Depends(GerenteUsuario),
+    usuario_actual: Usuario = Depends(obtener_usuario_actual),
 ):
     usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
     if not usuario:
@@ -114,13 +121,42 @@ def obtener_usuario(
     return UsuarioResponse.model_validate(usuario)
 
 
-@router.put("/{usuario_id}", response_model=UsuarioResponse, dependencies=[Depends(UsuariosModulo)])
+@router.post("/{usuario_id}/revocar-sesion", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(UsuariosModulo), Depends(UsuariosEditar)])
+def revocar_sesion_usuario(
+    usuario_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario_actual: Usuario = Depends(obtener_usuario_actual),
+):
+    usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
+    if not usuario:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+    if usuario.id == usuario_actual.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No puedes cerrar tu propia sesión desde esta pantalla",
+        )
+
+    usuario.version_sesion += 1
+    db.commit()
+    crear_registro_auditoria(
+        db=db,
+        usuario_id=usuario_actual.id,
+        accion="REVOCAR_SESION",
+        tipo_entidad="Usuario",
+        entidad_id=usuario.id,
+        valores_nuevos={"resultado": "sesiones_revocadas"},
+        direccion_ip=request.client.host if request.client else None,
+    )
+
+
+@router.put("/{usuario_id}", response_model=UsuarioResponse, dependencies=[Depends(UsuariosModulo), Depends(UsuariosEditar)])
 def actualizar_usuario(
     usuario_id: str,
     datos: UsuarioActualizar,
     request: Request,
     db: Session = Depends(get_db),
-    usuario_actual: Usuario = Depends(AdminUsuario),
+    usuario_actual: Usuario = Depends(obtener_usuario_actual),
 ):
     usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
     if not usuario:
@@ -208,12 +244,12 @@ def actualizar_usuario(
     return UsuarioResponse.model_validate(usuario)
 
 
-@router.delete("/{usuario_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(UsuariosModulo)])
+@router.delete("/{usuario_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(UsuariosModulo), Depends(UsuariosEliminar)])
 def eliminar_usuario(
     usuario_id: str,
     request: Request,
     db: Session = Depends(get_db),
-    usuario_actual: Usuario = Depends(AdminUsuario),
+    usuario_actual: Usuario = Depends(obtener_usuario_actual),
 ):
     usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
     if not usuario:
