@@ -99,14 +99,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   useEffect(() => {
     if (!isAuthenticated) return
+    const permisos = Array.isArray(user?.permisos) ? user.permisos : []
+    const puedeVerReportes =
+      user?.rol === "admin" ||
+      permisos.length === 0 ||
+      permisos.includes("reportes") ||
+      permisos.includes("reportes:ver")
+    if (!puedeVerReportes) {
+      setNotifications([])
+      return
+    }
     const saved = localStorage.getItem("hotel-paredes-notificaciones-leidas")
     if (saved) setReadNotifications(JSON.parse(saved))
     api.reportes.notificaciones().then(setNotifications).catch(() => setNotifications([]))
     const interval = window.setInterval(() => {
       api.reportes.notificaciones().then(setNotifications).catch(() => undefined)
-    }, 120000)
+    }, 30000)
     return () => window.clearInterval(interval)
-  }, [isAuthenticated])
+  }, [isAuthenticated, user])
 
   useEffect(() => {
     if (!isAuthenticated || !user) return
@@ -157,16 +167,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (!user) return null
 
   const permisos = Array.isArray(user.permisos) ? user.permisos : []
+  const permisosDelModulo = (modulo: string) =>
+    permisos.filter((permiso) => permiso === modulo || permiso.startsWith(`${modulo}:`))
+  const tienePermisoModulo = (modulo: string) => {
+    const permisosModulo = permisosDelModulo(modulo)
+    if (permisos.length === 0) return true
+    return permisosModulo.includes(modulo) || permisosModulo.includes(`${modulo}:ver`)
+  }
+  const tienePermisoExplicito = (modulo: string) => permisosDelModulo(modulo).length > 0
   const filteredItems = navItems.filter((item) => {
-    if (!item.roles.includes(user.rol as any)) return false
     if (user.rol === "admin") return true
     const modulo = moduloDesdeRuta(item.href)
-    return permisos.length === 0 || permisos.includes(modulo)
+    if (!item.roles.includes(user.rol as any) && !tienePermisoExplicito(modulo)) return false
+    return tienePermisoModulo(modulo)
   })
 
   const itemRuta = navItems.find((item) => item.href === pathname || (item.href !== "/" && pathname.startsWith(`${item.href}/`)))
-  const tieneRolRuta = !itemRuta || itemRuta.roles.includes(user.rol as any)
-  const tienePermisoRuta = user.rol === "admin" || permisos.length === 0 || permisos.includes(moduloDesdeRuta(pathname))
+  const moduloRuta = moduloDesdeRuta(pathname)
+  const tieneRolRuta = !itemRuta || itemRuta.roles.includes(user.rol as any) || tienePermisoExplicito(moduloRuta)
+  const tienePermisoRuta = user.rol === "admin" || tienePermisoModulo(moduloRuta)
   const tieneAccesoRuta = tieneRolRuta && tienePermisoRuta
 
   function handleLogout() {

@@ -18,6 +18,7 @@ import {
 } from "lucide-react"
 import { api } from "@/lib/api"
 import { formatCurrency } from "@/lib/utils"
+import { getHotelDateKey } from "@/lib/utils"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ErrorToast } from "@/components/ui/error-toast"
 import { useAuth } from "@/hooks/useAuth"
@@ -45,9 +46,7 @@ const chartWidth = 640
 const chartHeight = 180
 
 function localDate(): string {
-  const date = new Date()
-  const offset = date.getTimezoneOffset() * 60000
-  return new Date(date.getTime() - offset).toISOString().slice(0, 10)
+  return getHotelDateKey()
 }
 
 function formatCompactDate(value: string) {
@@ -111,6 +110,15 @@ function ProgressBar({ value, color }: { value: number; color: string }) {
 
 export default function DashboardPage() {
   const { user } = useAuth()
+  const permisos = Array.isArray(user?.permisos) ? user.permisos : []
+  const recepcionCompleta =
+    permisos.includes("recepcion") ||
+    ["ver", "crear", "editar", "eliminar"].every((accion) => permisos.includes(`recepcion:${accion}`))
+  const tienePermisoVer = (modulo: string) => {
+    if (user?.rol === "admin" || permisos.length === 0) return true
+    if (recepcionCompleta && ["reportes", "habitaciones", "ventas", "facturacion"].includes(modulo)) return true
+    return permisos.includes(modulo) || permisos.includes(`${modulo}:ver`)
+  }
   const [arrivals, setArrivals] = useState<OperacionDia[]>([])
   const [departures, setDepartures] = useState<OperacionDia[]>([])
   const [rooms, setRooms] = useState<any[]>([])
@@ -126,15 +134,15 @@ export default function DashboardPage() {
     setError("")
     const from = new Date()
     from.setDate(from.getDate() - 29)
-    const startDate = new Date(from.getTime() - from.getTimezoneOffset() * 60000).toISOString().slice(0, 10)
+    const startDate = getHotelDateKey(from)
 
     const results = await Promise.allSettled([
-      api.reportes.llegadas(),
-      api.reportes.salidas(),
-      api.habitaciones.listar(),
-      api.reportes.ejecutivo(startDate, today, "diario"),
-      api.reportes.ingresosDetallado(startDate, today),
-      api.reportes.housekeeping(today),
+      tienePermisoVer("reportes") ? api.reportes.llegadas() : Promise.resolve([]),
+      tienePermisoVer("reportes") ? api.reportes.salidas() : Promise.resolve([]),
+      tienePermisoVer("habitaciones") ? api.habitaciones.listar() : Promise.resolve([]),
+      tienePermisoVer("reportes") ? api.reportes.ejecutivo(startDate, today, "diario") : Promise.resolve({ kpis: [] }),
+      tienePermisoVer("reportes") ? api.reportes.ingresosDetallado(startDate, today) : Promise.resolve({ por_canal: [] }),
+      tienePermisoVer("reportes") ? api.reportes.housekeeping(today) : Promise.resolve(null),
     ])
 
     const [arrivalsResult, departuresResult, roomsResult, executiveResult, detailResult, housekeepingResult] = results
@@ -148,7 +156,7 @@ export default function DashboardPage() {
     const criticalFailure = [arrivalsResult, departuresResult, roomsResult].find((result) => result.status === "rejected")
     if (criticalFailure?.status === "rejected") setError(criticalFailure.reason?.message || "No se pudo cargar el dashboard")
     setLoading(false)
-  }, [today])
+  }, [today, user])
 
   useEffect(() => { loadDashboard() }, [loadDashboard])
 

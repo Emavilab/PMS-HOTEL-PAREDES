@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Dialog } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { formatDateTimeMinute } from "@/lib/utils"
+import { getHotelDateKey } from "@/lib/utils"
 import { Eye, RefreshCw, Search, Shield, X } from "lucide-react"
 import { useAuth } from "@/hooks/useAuth"
 import type { RegistroAuditoria } from "@/types"
@@ -51,7 +52,7 @@ export default function AuditoriaPage() {
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement("a")
       anchor.href = url
-      const fecha = new Date().toISOString().slice(0, 10)
+      const fecha = getHotelDateKey()
       anchor.download = `auditoria_${fecha}.${format}`
       anchor.click()
       URL.revokeObjectURL(url)
@@ -98,7 +99,7 @@ export default function AuditoriaPage() {
       </Card>
 
       <Dialog open={Boolean(selected)} onClose={() => setSelected(null)} title="Detalle de auditoría" className="max-w-2xl">
-        {selected && <div className="space-y-4 text-sm"><div><span className="text-gray-500">Acción realizada</span><p className="font-medium">{selected.descripcion}</p></div><div className="grid grid-cols-2 gap-3"><div><span className="text-gray-500">Usuario</span><p>{selected.nombre_usuario || "Sistema"}</p></div><div><span className="text-gray-500">Fecha y hora</span><p>{formatDateTimeMinute(selected.creado_en)}</p></div>{selected.rol_usuario && <div><span className="text-gray-500">Cargo en el sistema</span><p>{selected.rol_usuario}</p></div>}{selected.direccion_ip && <div><span className="text-gray-500">Ubicación de conexión (IP)</span><p>{selected.direccion_ip}</p></div>}</div>{Object.keys(selected.detalles || {}).length > 0 && <div><h3 className="mb-2 font-medium">Cambios realizados</h3><dl className="divide-y rounded-md border px-3">{Object.entries(selected.detalles || {}).map(([etiqueta, valor]) => <div key={etiqueta} className="flex justify-between gap-4 py-2"><dt className="text-gray-500">{etiqueta}</dt><dd className="text-right font-medium">{typeof valor === "object" ? JSON.stringify(valor) : String(valor)}</dd></div>)}</dl></div>}</div>}
+        {selected && <div className="space-y-4 text-sm"><div><span className="text-gray-500">Acción realizada</span><p className="font-medium">{selected.descripcion}</p></div><div className="grid grid-cols-2 gap-3"><div><span className="text-gray-500">Usuario</span><p>{selected.nombre_usuario || "Sistema"}</p></div><div><span className="text-gray-500">Fecha y hora</span><p>{formatDateTimeMinute(selected.creado_en)}</p></div>{selected.rol_usuario && <div><span className="text-gray-500">Cargo en el sistema</span><p>{selected.rol_usuario}</p></div>}{selected.direccion_ip && <div><span className="text-gray-500">IP de conexión</span><p>{selected.direccion_ip}</p></div>}{selected.metodo_http && <div><span className="text-gray-500">Método HTTP</span><p>{selected.metodo_http}</p></div>}{selected.estado_http && <div><span className="text-gray-500">Resultado HTTP</span><p>{selected.estado_http}</p></div>}{selected.ruta && <div className="col-span-2"><span className="text-gray-500">Ruta</span><p className="font-mono text-xs">{selected.ruta}</p></div>}{selected.agente_usuario && <div className="col-span-2"><span className="text-gray-500">Navegador / dispositivo</span><p className="break-words text-xs">{selected.agente_usuario}</p></div>}</div>{Object.keys(selected.detalles || {}).length > 0 && <div><h3 className="mb-2 font-medium">Cambios realizados</h3><dl className="divide-y rounded-md border px-3">{Object.entries(selected.detalles || {}).map(([etiqueta, valor]) => <div key={etiqueta} className="flex justify-between gap-4 py-2"><dt className="text-gray-500">{etiqueta}</dt><dd className="text-right font-medium">{typeof valor === "object" ? JSON.stringify(valor) : String(valor)}</dd></div>)}</dl></div>}</div>}
       </Dialog>
     </div>
   )
