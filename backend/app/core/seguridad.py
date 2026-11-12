@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import get_db
 from app.modules.usuarios.modelos import Usuario
-from app.modules.usuarios.esquemas import MODULOS_KEYS
+from app.modules.usuarios.esquemas import MODULOS_KEYS, PERMISOS_VALIDOS
 
 seguridad = HTTPBearer()
 
@@ -94,6 +94,11 @@ def obtener_usuario_actual(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Usuario no encontrado o inactivo",
         )
+    if payload.get("sv", 0) != usuario.version_sesion:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="La sesión fue cerrada remotamente",
+        )
     request.state.usuario_auditoria = usuario
     return usuario
 
@@ -119,17 +124,105 @@ MODULOS_POR_ROL = {
     "limpieza": {"housekeeping", "habitaciones"},
 }
 
+RECEPCION_LECTURAS_COMPARTIDAS = {
+    "/reportes/llegadas",
+    "/reportes/salidas",
+    "/habitaciones",
+    "/metodos-pago",
+    "/ventas/ocupadas",
+}
+
+
+def tiene_lectura_compartida_recepcion(usuario: Usuario, request: Request) -> bool:
+    ruta = request.url.path
+    ruta_compartida = ruta in RECEPCION_LECTURAS_COMPARTIDAS or (
+        ruta.startswith("/ventas/habitaciones/") and ruta.endswith("/ocupacion")
+    )
+    extension_desde_recepcion = (
+        request.method == "POST"
+        and ruta.startswith("/reservas/")
+        and ruta.endswith("/extender-estadia")
+    )
+    if not extension_desde_recepcion and (request.method != "GET" or not ruta_compartida):
+        return False
+    try:
+        permisos = set(json.loads(usuario.permisos or "[]"))
+    except (TypeError, ValueError):
+        permisos = set()
+    return "recepcion" in permisos or {
+        "recepcion:ver",
+        "recepcion:crear",
+        "recepcion:editar",
+        "recepcion:eliminar",
+    }.issubset(permisos)
+
 
 def requerir_modulo(modulo: str):
-    def verificar_modulo(usuario: Usuario = Depends(obtener_usuario_actual)) -> Usuario:
+    def verificar_modulo(
+        request: Request,
+        usuario: Usuario = Depends(obtener_usuario_actual),
+    ) -> Usuario:
         modulos_rol = MODULOS_POR_ROL.get(usuario.rol, set())
         try:
             permisos_usuario = set(json.loads(usuario.permisos or "[]"))
         except (TypeError, ValueError):
             permisos_usuario = set()
-        if modulo not in modulos_rol or (
-            usuario.rol != "admin" and permisos_usuario and modulo not in permisos_usuario
-        ):
+        permisos_modulo = {
+            permiso for permiso in permisos_usuario
+            if permiso == modulo or permiso.startswith(f"{modulo}:")
+        }
+        if tiene_lectura_compartida_recepcion(usuario, request):
+            return usuario
+        tiene_permiso_explicito = modulo in permisos_usuario or any(
+            permiso.startswith(f"{modulo}:") for permiso in permisos_usuario
+        )
+        if permisos_usuario and not tiene_permiso_explicito:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permisos para este módulo")
+        if modulo not in modulos_rol and not tiene_permiso_explicito:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permisos para este módulo")
+        if usuario.rol != "admin" and permisos_modulo and modulo not in permisos_modulo:
+            accion_por_metodo = {
+                "GET": "ver",
+                "POST": "crear",
+                "PUT": "editar",
+                "PATCH": "editar",
+                "DELETE": "eliminar",
+            }
+            accion = accion_por_metodo.get(request.method)
+            if accion and f"{modulo}:{accion}" not in permisos_usuario:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"No tienes permiso para {accion} en este módulo",
+                )
         return usuario
     return verificar_modulo
+
+
+def requerir_permiso(modulo: str, accion: str):
+    permiso = f"{modulo}:{accion}"
+    if permiso not in PERMISOS_VALIDOS:
+        raise ValueError(f"Permiso no registrado: {permiso}")
+
+    def verificar_permiso(usuario: Usuario = Depends(obtener_usuario_actual)) -> Usuario:
+        if usuario.rol == "admin":
+            return usuario
+        modulos_rol = MODULOS_POR_ROL.get(usuario.rol, set())
+        try:
+            permisos_usuario = set(json.loads(usuario.permisos or "[]"))
+        except (TypeError, ValueError):
+            permisos_usuario = set()
+        permisos_modulo = {
+            permiso_actual for permiso_actual in permisos_usuario
+            if permiso_actual == modulo or permiso_actual.startswith(f"{modulo}:")
+        }
+        if permisos_usuario and not permisos_modulo:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permisos para este módulo")
+        if modulo not in modulos_rol and not permisos_modulo:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permisos para este módulo")
+        if modulo in permisos_modulo or permiso in permisos_modulo:
+            return usuario
+        if permisos_modulo:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para esta acción")
+        return usuario
+
+    return verificar_permiso

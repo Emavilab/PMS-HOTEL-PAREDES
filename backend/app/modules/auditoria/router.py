@@ -14,6 +14,7 @@ from app.modules.auditoria.esquemas import RegistroAuditoriaResponse, RegistrosA
 from app.common.exportar import exportar_excel, exportar_pdf
 from app.modules.usuarios.modelos import Usuario
 from app.modules.configuracion.modelos import HotelConfig
+from app.common.zona_horaria import fecha_hotel
 
 router = APIRouter(prefix="/registros-auditoria", tags=["Auditoria"])
 
@@ -61,6 +62,7 @@ NOMBRES_ACCION = {
     "LOGIN": "inició sesión",
     "LOGIN_FALLIDO": "intentó iniciar sesión sin éxito",
     "LOGOUT": "cerró sesión",
+    "REVOCAR_SESION": "cerró remotamente las sesiones de",
     "ACTUALIZAR_ESTADO": "cambió el estado de",
     "DESACTIVAR": "desactivó",
     "ELIMINAR": "eliminó",
@@ -89,7 +91,7 @@ def _descripcion_accion(registro: RegistroAuditoria) -> str:
         cambios = _cambios_relevantes(anteriores, nuevos)
         if cambios:
             return f"{actor} {NOMBRES_ACCION.get(accion, 'modificó')} {entidad} {referencia}: {cambios[0]}".strip()
-    if accion in {"CREAR", "ELIMINAR", "CANCELAR", "CONFIRMAR", "NO_SHOW", "CHECK_IN", "CHECK_OUT", "CULMINAR_SALIDA"}:
+    if accion in {"CREAR", "ELIMINAR", "CANCELAR", "CONFIRMAR", "NO_SHOW", "CHECK_IN", "CHECK_OUT", "CULMINAR_SALIDA", "REVOCAR_SESION"}:
         extra = _detalle_accion(accion, anteriores, nuevos)
         return f"{actor} {NOMBRES_ACCION.get(accion, 'realizó una acción en')} {entidad} {referencia}{extra}".strip()
     return f"{actor} {NOMBRES_ACCION.get(accion, 'realizó una acción en')} {entidad} {referencia}".strip()
@@ -331,5 +333,5 @@ def exportar_registros_auditoria(
         else exportar_pdf(datos, columnas, "Reporte de Auditoría del Sistema", subtitulo, config_data, _.nombre_completo)
     )
     media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if formato == "xlsx" else "application/pdf"
-    nombre_archivo = f"auditoria_{date.today().isoformat()}.{formato}"
+    nombre_archivo = f"auditoria_{fecha_hotel().isoformat()}.{formato}"
     return Response(content=contenido, media_type=media_type, headers={"Content-Disposition": f'attachment; filename="{nombre_archivo}"'})

@@ -13,6 +13,7 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
 from reportlab.platypus import Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from app.common.zona_horaria import ahora_hotel
 
 
 INSTITUTIONAL_BLUE = "1E3A8A"
@@ -67,7 +68,7 @@ def _metadata(config: dict | None, generado_por: str | None, subtitulo: str) -> 
         hotel,
         contacto,
         subtitulo,
-        f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')} · Usuario: {generado_por or 'Sistema'}",
+        f"Generado: {ahora_hotel().strftime('%d/%m/%Y %H:%M')} · Usuario: {generado_por or 'Sistema'}",
     ]
 
 
@@ -115,7 +116,7 @@ def exportar_excel(
     ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=total_columnas)
     ws.cell(row=3, column=1, value=subtitulo or "Sin período especificado").alignment = Alignment(horizontal="center")
     ws.merge_cells(start_row=4, start_column=1, end_row=4, end_column=total_columnas)
-    ws.cell(row=4, column=1, value=f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')} · Usuario: {generado_por or 'Sistema'}").alignment = Alignment(horizontal="center")
+    ws.cell(row=4, column=1, value=f"Generado: {ahora_hotel().strftime('%d/%m/%Y %H:%M')} · Usuario: {generado_por or 'Sistema'}").alignment = Alignment(horizontal="center")
     for col_idx, col in enumerate(columnas, 1):
         cell = ws.cell(row=fila_encabezado, column=col_idx, value=col["header"])
         cell.font = HEADER_FONT

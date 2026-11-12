@@ -3,14 +3,22 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 
 from app.core.config import settings
 
+database_url = settings.DATABASE_URL.replace(
+    "postgresql+psycopg://", "postgresql+psycopg2://", 1
+)
+if database_url.startswith("postgresql://"):
+    database_url = database_url.replace(
+        "postgresql://", "postgresql+psycopg2://", 1
+    )
+
 connect_args = {}
-if settings.DATABASE_URL.startswith("sqlite"):
+if database_url.startswith("sqlite"):
     connect_args["check_same_thread"] = False
 
 engine = create_engine(
-    settings.DATABASE_URL,
+    database_url,
     connect_args=connect_args,
-    pool_pre_ping=not settings.DATABASE_URL.startswith("sqlite"),
+    pool_pre_ping=not database_url.startswith("sqlite"),
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
