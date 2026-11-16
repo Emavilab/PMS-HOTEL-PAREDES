@@ -1,5 +1,12 @@
 "use client"
 
+/**
+ * Pantalla de autenticación del PMS.
+ *
+ * Conserva únicamente el identificador cuando el usuario activa
+ * "Recordarme"; la contraseña se entrega al hook de autenticación y no se
+ * persiste en el navegador.
+ */
 import { useState, FormEvent, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/hooks/useAuth"
@@ -26,12 +33,14 @@ export default function LoginPage() {
   const { login } = useAuth()
   const router = useRouter()
 
+  // Inactividad redirige al login con un motivo para explicar la expulsión.
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("motivo") === "inactividad") {
       setError("Tu sesión se cerró por inactividad. Inicia sesión nuevamente.")
     }
   }, [])
 
+  // Carga preferencias no sensibles del dispositivo y la identidad visual del hotel.
   useEffect(() => {
     const savedIdentifier = localStorage.getItem("rememberedIdentifier")
     if (savedIdentifier) {
@@ -45,6 +54,7 @@ export default function LoginPage() {
     }).catch(() => {})
   }, [])
 
+  /** Valida los campos antes de realizar una petición al backend. */
   function validar(): boolean {
     const errs = { identificador: "", password: "" }
     if (!identificador.trim()) {
@@ -59,6 +69,12 @@ export default function LoginPage() {
     return !errs.identificador && !errs.password
   }
 
+  /**
+   * Ejecuta el login y dirige cada rol a su pantalla inicial.
+   *
+   * El personal de limpieza comienza en Housekeeping; los demás roles llegan
+   * al dashboard general y reciben sus permisos desde el backend.
+   */
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError("")

@@ -1,5 +1,11 @@
 "use client"
 
+/**
+ * Layout protegido de las pantallas operativas.
+ *
+ * Filtra la navegación por rol y permisos, controla inactividad, actualiza la
+ * actividad del usuario y consulta notificaciones operativas periódicamente.
+ */
 import { useAuth } from "@/hooks/useAuth"
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
@@ -49,6 +55,7 @@ const navItems = [
 ]
 
 function moduloDesdeRuta(pathname: string) {
+  /** Convierte una ruta de Next.js en la clave de autorización del backend. */
   if (pathname === "/") return "dashboard"
   return pathname.slice(1).split("/")[0].replaceAll("-", "_")
 }
@@ -63,6 +70,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [notificationsOpen, setNotificationsOpen] = useState(false)
 
   useEffect(() => {
+    // La actividad del usuario reinicia el cierre automático por inactividad.
     if (!isAuthenticated) return
 
     const tiempoMaximoInactividad = 1 * 60 * 1000
@@ -92,12 +100,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [isAuthenticated, logout, router])
 
   useEffect(() => {
+    // Ninguna vista operativa se muestra sin una sesión válida.
     if (!loading && !isAuthenticated) {
       router.push("/login")
     }
   }, [loading, isAuthenticated, router])
 
   useEffect(() => {
+    // Las notificaciones se consultan solo si el usuario puede ver reportes.
     if (!isAuthenticated) return
     const permisos = Array.isArray(user?.permisos) ? user.permisos : []
     const puedeVerReportes =

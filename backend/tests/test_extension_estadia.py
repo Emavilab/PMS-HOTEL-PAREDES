@@ -1,12 +1,13 @@
 from datetime import date, timedelta
 
-from app.core.dependencies import PersonalUsuario, ReservasModulo
+from app.core.dependencies import PersonalUsuario, ReservasModulo, VentasModulo
 from app.modules.configuracion.modelos import HotelConfig
 from app.modules.estadias.modelos import Estadia
 from app.modules.facturacion.modelos import Cargo, Pago
 from app.modules.habitaciones.modelos import Habitacion, Piso, TipoHabitacion
 from app.modules.huespedes.modelos import Huesped
 from app.modules.reservas.modelos import Reserva
+from app.modules.reservas.router import _recalcular_totales
 from app.modules.usuarios.modelos import Usuario
 from tests.conftest import TestingSessionLocal
 
@@ -71,12 +72,14 @@ def crear_estadia_activa():
 def preparar_cliente(client, usuario):
     client.app.dependency_overrides[PersonalUsuario] = lambda: usuario
     client.app.dependency_overrides[ReservasModulo] = lambda: usuario
+    client.app.dependency_overrides[VentasModulo] = lambda: usuario
     return client
 
 
 def limpiar_override(client):
     client.app.dependency_overrides.pop(PersonalUsuario, None)
     client.app.dependency_overrides.pop(ReservasModulo, None)
+    client.app.dependency_overrides.pop(VentasModulo, None)
 
 
 def test_extender_estadia_conserva_pago_y_actualiza_saldo(client):
@@ -101,6 +104,58 @@ def test_extender_estadia_conserva_pago_y_actualiza_saldo(client):
         cargo = db.query(Cargo).filter(Cargo.reserva_id == reserva.id).one()
         assert cargo.cantidad == 2
         assert cargo.total == 200
+    finally:
+        limpiar_override(client)
+        db.close()
+
+
+def test_recalcular_totales_respeta_impuesto_en_cero():
+    db, _, reserva = crear_estadia_activa()
+    try:
+        db.query(HotelConfig).one().impuesto = 0
+        _recalcular_totales(db, reserva)
+
+        assert reserva.impuesto == 0
+        assert reserva.total == 100
+    finally:
+        db.close()
+
+
+def test_extender_estadia_respeta_impuesto_en_cero(client):
+    db, usuario, reserva = crear_estadia_activa()
+    try:
+        config = db.query(HotelConfig).one()
+        config.impuesto = 0
+        config.impuesto_turistico = 0
+        db.commit()
+        respuesta = preparar_cliente(client, usuario).post(
+            f"/reservas/{reserva.id}/extender-estadia",
+            json={"nueva_fecha_salida": str(reserva.fecha_salida + timedelta(days=1))},
+        )
+
+        assert respuesta.status_code == 200
+        datos = respuesta.json()
+        assert datos["total_adicional"] == 100
+        assert datos["nuevo_total"] == 215
+    finally:
+        limpiar_override(client)
+        db.close()
+
+
+def test_verificar_salida_recalcula_impuesto_vigente(client):
+    db, usuario, reserva = crear_estadia_activa()
+    try:
+        db.query(HotelConfig).one().impuesto = 0
+        db.commit()
+        respuesta = preparar_cliente(client, usuario).get(
+            f"/ventas/reservas/{reserva.id}/verificar-salida",
+        )
+
+        assert respuesta.status_code == 200
+        datos = respuesta.json()
+        assert datos["impuesto"] == 0
+        assert datos["total_habitacion"] == 100
+        assert datos["total_a_pagar"] == 0
     finally:
         limpiar_override(client)
         db.close()
