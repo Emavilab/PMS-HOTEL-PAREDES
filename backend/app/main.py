@@ -122,11 +122,16 @@ def agregar_columnas_reserva_si_faltan():
                 conn.execute(text(alteracion))
 
     columnas_configuracion = {col["name"] for col in inspect(engine).get_columns("configuracion")}
-    if "impuesto_turistico" not in columnas_configuracion:
-        with engine.begin() as conn:
-            conn.execute(text(
-                "ALTER TABLE configuracion ADD COLUMN impuesto_turistico FLOAT NOT NULL DEFAULT 10.0"
-            ))
+    alteraciones_configuracion = {
+        "cai": "VARCHAR(100)",
+        "rango_autorizado": "VARCHAR(255)",
+        "fecha_limite_emision": "VARCHAR(20)",
+        "impuesto_turistico": "FLOAT NOT NULL DEFAULT 4.0",
+    }
+    with engine.begin() as conn:
+        for nombre, tipo in alteraciones_configuracion.items():
+            if nombre not in columnas_configuracion:
+                conn.execute(text(f"ALTER TABLE configuracion ADD COLUMN {nombre} {tipo}"))
 
     columnas_usuarios = {col["name"] for col in inspect(engine).get_columns("usuarios")}
     if "usuario" not in columnas_usuarios:

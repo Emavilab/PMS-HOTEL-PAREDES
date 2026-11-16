@@ -1,3 +1,5 @@
+"""Consulta, filtrado y exportación del historial de auditoría."""
+
 import json
 from datetime import date, datetime, time, timedelta, timezone
 

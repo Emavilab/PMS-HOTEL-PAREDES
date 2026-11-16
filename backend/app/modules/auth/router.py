@@ -1,3 +1,9 @@
+"""Endpoints de autenticación y ciclo de vida de sesiones.
+
+Centraliza el acceso por correo o usuario, la verificación de JWT y el
+registro de inicios y cierres de sesión en auditoría.
+"""
+
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -16,6 +22,7 @@ router = APIRouter(prefix="/auth", tags=["Autenticacion"])
 
 @router.post("/login", response_model=TokenResponse)
 def login(datos: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    """Autentica al usuario y emite un token con su versión de sesión."""
     identificador = datos.identificador.strip().lower()
     usuario = db.query(Usuario).filter(
         or_(Usuario.email == identificador, Usuario.usuario == identificador)
@@ -58,6 +65,7 @@ def login(datos: LoginRequest, request: Request, db: Session = Depends(get_db)):
 
 @router.post("/verify", response_model=UsuarioResponse)
 def verify_token(datos: VerifyTokenRequest, db: Session = Depends(get_db)):
+    """Confirma que un token sigue vigente y que la sesión no fue revocada."""
     from app.core.seguridad import verificar_token
 
     payload = verificar_token(datos.token)
@@ -88,6 +96,7 @@ def verify_token(datos: VerifyTokenRequest, db: Session = Depends(get_db)):
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout(request: Request, usuario_actual: Usuario = Depends(obtener_usuario_actual), db: Session = Depends(get_db)):
+    """Registra el cierre voluntario de la sesión autenticada."""
     crear_registro_auditoria(
         db=db,
         usuario_id=usuario_actual.id,
