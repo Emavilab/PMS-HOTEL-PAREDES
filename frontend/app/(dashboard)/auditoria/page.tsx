@@ -1,5 +1,6 @@
 "use client"
 
+/** Consulta y detalle de eventos de auditoría con filtros y exportación. */
 import { useEffect, useMemo, useState } from "react"
 import { api } from "@/lib/api"
 import { Card, CardContent } from "@/components/ui/card"

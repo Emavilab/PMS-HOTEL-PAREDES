@@ -1,5 +1,6 @@
 "use client"
 
+/** Administración de pisos, tipos de habitación y estados operativos. */
 import { FormEvent, useEffect, useMemo, useState } from "react"
 import { api } from "@/lib/api"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -512,5 +513,4 @@ function DialogActions({ saving, onCancel }: { saving: boolean; onCancel: () => 
     </div>
   )
 }
-
 

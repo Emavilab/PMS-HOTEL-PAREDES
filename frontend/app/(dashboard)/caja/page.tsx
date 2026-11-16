@@ -1,5 +1,6 @@
 "use client"
 
+/** Gestión de apertura, movimientos y cierre de caja. */
 import { useEffect, useState } from "react"
 import { api } from "@/lib/api"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"

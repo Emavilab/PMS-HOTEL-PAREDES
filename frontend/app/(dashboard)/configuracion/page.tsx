@@ -1,5 +1,6 @@
 "use client"
 
+/** Configuración de identidad, datos fiscales y preferencias del hotel. */
 import { useEffect, useState } from "react"
 import { useAuth } from "@/hooks/useAuth"
 import { api } from "@/lib/api"
@@ -36,7 +37,11 @@ export default function ConfiguracionPage() {
     telefono: "",
     email: "",
     rtn: "",
+    cai: "",
+    rango_autorizado: "",
+    fecha_limite_emision: "",
     impuesto: 15,
+    impuesto_turistico: 4,
     moneda: "HNL",
   })
   const [logoUrl, setLogoUrl] = useState("")
@@ -68,7 +73,7 @@ export default function ConfiguracionPage() {
   useEffect(() => {
     api.configuracion.obtener()
       .then((cfg) => {
-        setForm({ nombre: cfg.nombre, direccion: cfg.direccion || "", telefono: cfg.telefono || "", email: cfg.email || "", rtn: cfg.rtn || "", impuesto: cfg.impuesto, moneda: cfg.moneda || "HNL" })
+        setForm({ nombre: cfg.nombre, direccion: cfg.direccion || "", telefono: cfg.telefono || "", email: cfg.email || "", rtn: cfg.rtn || "", cai: cfg.cai || "", rango_autorizado: cfg.rango_autorizado || "", fecha_limite_emision: cfg.fecha_limite_emision || "", impuesto: cfg.impuesto, impuesto_turistico: cfg.impuesto_turistico ?? 4, moneda: cfg.moneda || "HNL" })
         setLogoUrl(cfg.logo_url || "")
         setFondoUrl(cfg.login_fondo_url || "")
       })
@@ -395,6 +400,18 @@ export default function ConfiguracionPage() {
               <Input value={form.rtn} onChange={(e) => setForm({ ...form, rtn: e.target.value })} placeholder="Número de identificación fiscal" />
             </div>
             <div className="space-y-2">
+              <label className="text-sm font-medium">CAI</label>
+              <Input value={form.cai} onChange={(e) => setForm({ ...form, cai: e.target.value })} placeholder="Código de Autorización de Impresión" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Rango autorizado</label>
+              <Input value={form.rango_autorizado} onChange={(e) => setForm({ ...form, rango_autorizado: e.target.value })} placeholder="Desde - Hasta" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Fecha límite de emisión</label>
+              <Input type="date" value={form.fecha_limite_emision} onChange={(e) => setForm({ ...form, fecha_limite_emision: e.target.value })} />
+            </div>
+            <div className="space-y-2">
               <label className="text-sm font-medium">Teléfono</label>
               <Input value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} placeholder="Teléfono del hotel" />
             </div>
@@ -405,6 +422,10 @@ export default function ConfiguracionPage() {
             <div className="space-y-2">
               <label className="text-sm font-medium">Impuesto (%)</label>
               <Input type="number" value={form.impuesto} onChange={(e) => setForm({ ...form, impuesto: Number(e.target.value) })} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Impuesto Turístico (%)</label>
+              <Input type="number" min="0" value={form.impuesto_turistico} onChange={(e) => setForm({ ...form, impuesto_turistico: Number(e.target.value) })} />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Moneda</label>

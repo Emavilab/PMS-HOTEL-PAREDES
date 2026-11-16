@@ -1,5 +1,6 @@
 "use client"
 
+/** Consulta de folios, cargos y pagos asociados a las reservas. */
 import { useEffect, useState } from "react"
 import { api } from "@/lib/api"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -370,6 +371,9 @@ function FacturaEncabezado({ config, factura, apiUrl }: { config: any | null; fa
           <p className="text-lg font-bold">FACTURA</p>
           <p className="text-sm">No. {factura.numero}</p>
           <p className="text-sm">Fecha: {new Date(factura.fecha).toLocaleDateString("es-HN")}</p>
+          <p className="text-sm">CAI: {factura.fiscal?.cai || "Pendiente de configurar"}</p>
+          <p className="text-sm">Rango: {factura.fiscal?.rango_autorizado || "Pendiente de configurar"}</p>
+          <p className="text-sm">Fecha límite: {factura.fiscal?.fecha_limite_emision || "Pendiente de configurar"}</p>
         </div>
       </div>
     </div>
@@ -430,7 +434,8 @@ function FacturaCuerpo({ factura }: { factura: any }) {
         <div className="rounded-md border p-4 text-sm print:ml-auto print:mt-4 print:w-72">
           <div className="flex justify-between"><span>Subtotal hospedaje</span><span>{formatCurrency(resumen.subtotal_habitacion)}</span></div>
           {resumen.descuento > 0 && <div className="flex justify-between"><span>Descuento</span><span>-{formatCurrency(resumen.descuento)}</span></div>}
-          <div className="flex justify-between"><span>Impuesto</span><span>{formatCurrency(resumen.impuesto)}</span></div>
+          <div className="flex justify-between"><span>ISV ({resumen.tasa_impuesto ?? 15}%)</span><span>{formatCurrency(resumen.impuesto)}</span></div>
+          <div className="flex justify-between"><span>Impuesto Turístico ({resumen.tasa_impuesto_turistico ?? 4}%)</span><span>{formatCurrency(resumen.impuesto_turistico)}</span></div>
           {resumen.total_consumos > 0 && <div className="flex justify-between"><span>Consumos</span><span>{formatCurrency(resumen.total_consumos)}</span></div>}
           {resumen.mora_penalidad > 0 && <div className="flex justify-between text-red-600"><span>Mora/Penalidad</span><span>{formatCurrency(resumen.mora_penalidad)}</span></div>}
           <div className="mt-3 border-t pt-3 flex justify-between text-base font-bold"><span>Total factura</span><span>{formatCurrency(resumen.total_factura)}</span></div>
