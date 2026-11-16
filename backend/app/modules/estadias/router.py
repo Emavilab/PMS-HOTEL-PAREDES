@@ -1,3 +1,5 @@
+"""Flujo de recepción para check-in, check-out y extensión de estadías."""
+
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -73,7 +75,7 @@ def extender_estadia(
         else 0
     )
     config = db.query(HotelConfig).first()
-    tasa_impuesto = float((config.impuesto if config else 15.0) or 15.0) / 100
+    tasa_impuesto = float(config.impuesto if config is not None else 15.0) / 100
     subtotal_adicional = round(precio_noche * noches_adicionales, 2)
     impuesto_adicional = round(subtotal_adicional * tasa_impuesto, 2)
     total_adicional = round(subtotal_adicional + impuesto_adicional, 2)

@@ -1,3 +1,5 @@
+"""Consulta y actualización de la configuración operativa del hotel."""
+
 import os
 import shutil
 import uuid

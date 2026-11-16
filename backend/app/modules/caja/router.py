@@ -1,3 +1,5 @@
+"""Apertura, movimientos y cierre de sesiones de caja."""
+
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status

@@ -60,6 +60,7 @@ class FolioResponse(BaseModel):
     subtotal: float = 0
     descuento: float = 0
     impuesto: float = 0
+    impuesto_turistico: float = 0
     total: float = 0
     pagado: float = 0
     saldo: float = 0
