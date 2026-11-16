@@ -1,5 +1,6 @@
 "use client"
 
+/** Reportes operativos y financieros con filtros por periodo. */
 import { useEffect, useState } from "react"
 import { api } from "@/lib/api"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -274,6 +275,7 @@ function ReporteIngresosView({ data, loading }: { data: any | null; loading: boo
                     <th className="text-right p-2">Pagos</th>
                     <th className="text-right p-2">Descuentos</th>
                     <th className="text-right p-2">Impuestos</th>
+                    <th className="text-right p-2">Imp. Turísticos</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -285,6 +287,7 @@ function ReporteIngresosView({ data, loading }: { data: any | null; loading: boo
                       <td className="text-right p-2">{formatCurrency(data.total_pagos)}</td>
                       <td className="text-right p-2">{formatCurrency(data.descuentos_aplicados)}</td>
                       <td className="text-right p-2">{formatCurrency(data.impuestos_recaudados)}</td>
+                      <td className="text-right p-2">{formatCurrency(data.impuesto_turistico_recaudado)}</td>
                     </tr>
                   )}
                 </tbody>

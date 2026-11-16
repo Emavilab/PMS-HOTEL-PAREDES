@@ -1,5 +1,6 @@
 "use client"
 
+/** Operación diaria de recepción: llegadas, estancias y salidas. */
 import { useEffect, useState, useCallback } from "react"
 import { api } from "@/lib/api"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"

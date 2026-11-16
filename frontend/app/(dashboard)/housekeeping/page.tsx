@@ -1,5 +1,6 @@
 "use client"
 
+/** Tablero de tareas de limpieza y asignación del personal. */
 import { useEffect, useState, useCallback } from "react"
 import { api } from "@/lib/api"
 import { getHotelDateKey } from "@/lib/utils"

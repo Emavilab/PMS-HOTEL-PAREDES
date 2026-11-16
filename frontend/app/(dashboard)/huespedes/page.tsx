@@ -1,5 +1,6 @@
 "use client"
 
+/** Registro, búsqueda e historial de huéspedes. */
 import { FormEvent, useEffect, useMemo, useState } from "react"
 import { api } from "@/lib/api"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
