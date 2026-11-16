@@ -1,3 +1,5 @@
+"""Cargos, pagos, folios y facturas asociadas a las reservas."""
+
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -17,6 +19,7 @@ from app.modules.facturacion.esquemas import (
 )
 from app.modules.reservas.modelos import Reserva
 from app.modules.usuarios.modelos import Usuario
+from app.modules.configuracion.modelos import HotelConfig
 
 router = APIRouter(prefix="/reservas", tags=["Facturacion"])
 router_facturas = APIRouter(prefix="/facturas", tags=["Facturas"])
@@ -236,6 +239,12 @@ def obtener_folio(
     pagos = db.query(Pago).filter(Pago.reserva_id == reserva_id).all()
 
     total_pagado = db.query(func.sum(Pago.monto)).filter(Pago.reserva_id == reserva_id).scalar() or 0
+    config = db.query(HotelConfig).first()
+    impuesto_turistico = round(
+        float(reserva.subtotal or 0) * float(config.impuesto_turistico if config else 4.0) / 100,
+        2,
+    )
+    total = round(float(reserva.total or 0) + impuesto_turistico, 2)
 
     return FolioResponse(
         reserva_id=reserva.id,
@@ -248,7 +257,8 @@ def obtener_folio(
         subtotal=reserva.subtotal or 0,
         descuento=reserva.descuento or 0,
         impuesto=reserva.impuesto or 0,
-        total=reserva.total or 0,
+        impuesto_turistico=impuesto_turistico,
+        total=total,
         pagado=float(total_pagado),
-        saldo=max((reserva.total or 0) - float(total_pagado), 0),
+        saldo=max(total - float(total_pagado), 0),
     )

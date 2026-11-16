@@ -1,3 +1,5 @@
+"""Alta, consulta, actualización e historial de huéspedes."""
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 

@@ -1,3 +1,5 @@
+"""Gestión de tareas de limpieza y estado de housekeeping."""
+
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status

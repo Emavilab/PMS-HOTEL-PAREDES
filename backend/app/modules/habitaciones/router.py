@@ -1,3 +1,5 @@
+"""Catálogo de tipos, pisos, habitaciones y sus estados operativos."""
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
