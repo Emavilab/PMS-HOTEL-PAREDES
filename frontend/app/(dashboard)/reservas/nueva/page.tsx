@@ -1,5 +1,6 @@
 "use client"
 
+/** Formulario de reserva con consulta de disponibilidad del inventario. */
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { api } from "@/lib/api"

@@ -1,5 +1,6 @@
 "use client"
 
+/** Listado y seguimiento de reservas por estado y fecha. */
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { api } from "@/lib/api"

@@ -1,5 +1,6 @@
 "use client"
 
+/** Administración de cuentas, roles, permisos y sesiones activas. */
 import { FormEvent, useEffect, useState } from "react"
 import { api } from "@/lib/api"
 import { Card, CardContent } from "@/components/ui/card"

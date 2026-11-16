@@ -1,5 +1,12 @@
 "use client"
 
+/**
+ * Contexto global de autenticación.
+ *
+ * Mantiene usuario y token en memoria, restaura sesiones almacenadas y limpia
+ * ambos almacenamientos cuando el backend responde 401 o el usuario cierra
+ * sesión voluntariamente.
+ */
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from "react"
 import { api } from "@/lib/api"
 import type { Usuario } from "@/types"
@@ -21,6 +28,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   const logout = useCallback(() => {
+    // El logout remoto es informativo; la limpieza local no depende de su respuesta.
     if (localStorage.getItem("token") || sessionStorage.getItem("token")) {
       api.auth.logout().catch(() => undefined)
     }
@@ -33,6 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
+    // Una revocación remota se comunica desde el cliente API mediante este evento.
     const handleUnauthorized = () => {
       setUser(null)
       setToken(null)
@@ -46,6 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
+    // La verificación al restaurar la sesión evita confiar solo en datos del navegador.
     const savedToken = localStorage.getItem("token") || sessionStorage.getItem("token")
     const savedUser = localStorage.getItem("user") || sessionStorage.getItem("user")
     if (savedToken && savedUser) {
@@ -71,6 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [logout])
 
   const login = async (identificador: string, password: string, recordar: boolean) => {
+    // Solo se persiste el token en el almacenamiento elegido por el usuario.
     const result = await api.auth.login(identificador, password)
     const storage = recordar ? localStorage : sessionStorage
     localStorage.removeItem("token")
@@ -92,6 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 
 export function useAuth() {
+  /** Expone el contexto y detecta usos fuera de AuthProvider. */
   const context = useContext(AuthContext)
   if (!context) throw new Error("useAuth must be used within AuthProvider")
   return context

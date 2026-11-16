@@ -1,5 +1,6 @@
 "use client"
 
+/** Registro y consulta de consumos y ventas adicionales. */
 import { useEffect, useState, useCallback } from "react"
 import { api } from "@/lib/api"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"

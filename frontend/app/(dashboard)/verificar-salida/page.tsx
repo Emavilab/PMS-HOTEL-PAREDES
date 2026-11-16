@@ -1,5 +1,6 @@
 "use client"
 
+/** Verificación operativa de salidas antes de completar el check-out. */
 import { useEffect, useState, useCallback } from "react"
 import { api } from "@/lib/api"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -228,7 +229,8 @@ export default function VerificarSalidaPage() {
 
                 <div className="border rounded-md divide-y text-sm">
                   <div className="flex justify-between p-2"><span>Subtotal ({verificacion.noches} noche{verificacion.noches !== 1 ? "s" : ""})</span><span>{formatCurrency(verificacion.subtotal)}</span></div>
-                  <div className="flex justify-between p-2"><span>Impuesto ({Number(hotelConfig?.impuesto ?? 15)}%)</span><span>{formatCurrency(verificacion.impuesto)}</span></div>
+                  <div className="flex justify-between p-2"><span>ISV ({Number(hotelConfig?.impuesto ?? 15)}%)</span><span>{formatCurrency(verificacion.impuesto)}</span></div>
+                  <div className="flex justify-between p-2"><span>Impuesto Turístico ({Number(hotelConfig?.impuesto_turistico ?? 4)}%)</span><span>{formatCurrency(verificacion.impuesto_turistico)}</span></div>
                   {verificacion.descuento > 0 && <div className="flex justify-between p-2 text-red-600"><span>Descuento</span><span>-{formatCurrency(verificacion.descuento)}</span></div>}
                   <div className="flex justify-between p-2 font-medium"><span>Total habitación</span><span>{formatCurrency(verificacion.total_habitacion)}</span></div>
                 </div>
@@ -337,6 +339,9 @@ export default function VerificarSalidaPage() {
                   <p className="text-lg font-bold">FACTURA</p>
                   <p className="text-sm">No. {factura.numero}</p>
                   <p className="text-sm">Fecha: {new Date(factura.fecha).toLocaleDateString("es-HN")}</p>
+                  <p className="text-sm">CAI: {factura.fiscal?.cai || "Pendiente de configurar"}</p>
+                  <p className="text-sm">Rango: {factura.fiscal?.rango_autorizado || "Pendiente de configurar"}</p>
+                  <p className="text-sm">Fecha límite: {factura.fiscal?.fecha_limite_emision || "Pendiente de configurar"}</p>
                 </div>
               </div>
             </div>
@@ -392,7 +397,8 @@ export default function VerificarSalidaPage() {
               <div className="rounded-md border p-4 text-sm print:ml-auto print:mt-4 print:w-72">
                 <div className="flex justify-between"><span>Subtotal hospedaje</span><span>{formatCurrency(factura.resumen.subtotal_habitacion)}</span></div>
                 {factura.resumen.descuento > 0 && <div className="flex justify-between"><span>Descuento</span><span>-{formatCurrency(factura.resumen.descuento)}</span></div>}
-                <div className="flex justify-between"><span>Impuesto</span><span>{formatCurrency(factura.resumen.impuesto)}</span></div>
+                <div className="flex justify-between"><span>ISV ({factura.resumen.tasa_impuesto ?? 15}%)</span><span>{formatCurrency(factura.resumen.impuesto)}</span></div>
+                <div className="flex justify-between"><span>Impuesto Turístico ({factura.resumen.tasa_impuesto_turistico ?? 4}%)</span><span>{formatCurrency(factura.resumen.impuesto_turistico)}</span></div>
                 {factura.resumen.total_consumos > 0 && <div className="flex justify-between"><span>Consumos</span><span>{formatCurrency(factura.resumen.total_consumos)}</span></div>}
                 {factura.resumen.mora_penalidad > 0 && <div className="flex justify-between text-red-600"><span>Mora/Penalidad</span><span>{formatCurrency(factura.resumen.mora_penalidad)}</span></div>}
                 <div className="mt-3 border-t pt-3 flex justify-between text-base font-bold"><span>Total factura</span><span>{formatCurrency(factura.resumen.total_factura)}</span></div>
