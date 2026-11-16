@@ -112,6 +112,7 @@ class VerificacionSalidaResponse(BaseModel):
     subtotal: float
     descuento: float
     impuesto: float
+    impuesto_turistico: float = 0
     total_habitacion: float
     consumos: list[ConsumoResponse] = []
     total_consumos: float = 0

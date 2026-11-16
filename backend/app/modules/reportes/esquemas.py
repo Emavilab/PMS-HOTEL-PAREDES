@@ -20,6 +20,7 @@ class ReporteIngresos(BaseModel):
     total_pagos: float = 0
     descuentos_aplicados: float = 0
     impuestos_recaudados: float = 0
+    impuesto_turistico_recaudado: float = 0
 
 
 class CuentaPorCobrar(BaseModel):

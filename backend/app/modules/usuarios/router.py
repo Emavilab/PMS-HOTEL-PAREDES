@@ -1,3 +1,9 @@
+"""Gestión administrativa de usuarios, actividad y sesiones remotas.
+
+Las operaciones sensibles exigen permisos del módulo Usuarios y generan
+auditoría con el actor que realizó el cambio.
+"""
+
 import json
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -30,6 +36,7 @@ def listar_usuarios(
     db: Session = Depends(get_db),
     usuario_actual: Usuario = Depends(obtener_usuario_actual),
 ):
+    """Devuelve las cuentas visibles para el usuario administrador."""
     usuarios = db.query(Usuario).all()
     return [UsuarioResponse.model_validate(u) for u in usuarios]
 
@@ -39,6 +46,7 @@ def registrar_actividad(
     db: Session = Depends(get_db),
     usuario_actual: Usuario = Depends(obtener_usuario_actual),
 ):
+    """Actualiza la última actividad para detectar usuarios conectados."""
     usuario_actual.ultima_actividad = datetime.now(timezone.utc)
     db.commit()
 
@@ -48,6 +56,7 @@ def listar_usuarios_activos(
     db: Session = Depends(get_db),
     usuario_actual: Usuario = Depends(GerenteUsuario),
 ):
+    """Lista usuarios activos con actividad reciente para supervisión."""
     limite = datetime.now(timezone.utc) - UMBRAL_ACTIVIDAD
     usuarios = db.query(Usuario).filter(
         Usuario.estado == "activo", Usuario.ultima_actividad.isnot(None),
@@ -69,6 +78,7 @@ def crear_usuario(
     db: Session = Depends(get_db),
     usuario_actual: Usuario = Depends(obtener_usuario_actual),
 ):
+    """Crea una cuenta aplicando hash de contraseña y permisos validados."""
     usuario_nombre = datos.usuario.lower()
     email = str(datos.email).lower()
     existe = db.query(Usuario).filter(

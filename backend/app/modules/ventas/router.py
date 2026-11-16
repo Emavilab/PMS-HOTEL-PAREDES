@@ -1,3 +1,5 @@
+"""Productos, consumos y ventas adicionales del hotel."""
+
 from datetime import date, datetime, timezone
 from typing import Optional
 import json
@@ -18,10 +20,12 @@ from app.modules.ventas.esquemas import (
     CategoriaProductoCrear, CategoriaProductoActualizar, CategoriaProductoResponse,
 )
 from app.modules.reservas.modelos import Reserva
+from app.modules.reservas.router import _recalcular_totales
 from app.modules.facturacion.modelos import Pago, Factura
 from app.modules.estadias.modelos import Estadia
 from app.modules.habitaciones.modelos import Habitacion
 from app.modules.usuarios.modelos import Usuario
+from app.modules.configuracion.modelos import HotelConfig
 
 router = APIRouter(prefix="/ventas", tags=["Ventas"])
 
@@ -424,6 +428,7 @@ def verificar_salida(
     if reserva.estado != "CHECKED_IN":
         raise HTTPException(status_code=400, detail=f"La reserva está en estado {reserva.estado}; no tiene una estadía activa")
 
+    _recalcular_totales(db, reserva)
     noches = (reserva.fecha_salida - reserva.fecha_entrada).days
     hoy = date.today()
     mora = 0
@@ -450,7 +455,12 @@ def verificar_salida(
         Pago.reserva_id == reserva_id
     ).scalar() or 0
 
-    total_a_pagar = (reserva.total or 0) + total_consumos_pendientes + mora - float(total_pagado)
+    config = db.query(HotelConfig).first()
+    impuesto_turistico = round(
+        float(reserva.subtotal or 0) * float(config.impuesto_turistico if config else 4.0) / 100,
+        2,
+    )
+    total_a_pagar = (reserva.total or 0) + impuesto_turistico + total_consumos_pendientes + mora - float(total_pagado)
     if total_a_pagar < 0:
         total_a_pagar = 0
 
@@ -472,6 +482,7 @@ def verificar_salida(
         subtotal=reserva.subtotal or 0,
         descuento=reserva.descuento or 0,
         impuesto=reserva.impuesto or 0,
+        impuesto_turistico=impuesto_turistico,
         total_habitacion=reserva.total or 0,
         consumos=consumos_resp,
         total_consumos=total_consumos,
@@ -496,6 +507,7 @@ def culminar_salida(
     if reserva.estado != "CHECKED_IN":
         raise HTTPException(status_code=400, detail=f"La reserva está en estado {reserva.estado}")
 
+    _recalcular_totales(db, reserva)
     consumos_pendientes = db.query(Consumo).filter(
         Consumo.reserva_id == reserva_id, Consumo.pagado == False
     ).all()
@@ -519,7 +531,12 @@ def culminar_salida(
         Pago.reserva_id == reserva_id
     ).scalar() or 0
 
-    saldo = (reserva.total or 0) + total_consumos_pendientes + mora - float(total_pagado)
+    config = db.query(HotelConfig).first()
+    impuesto_turistico = round(
+        float(reserva.subtotal or 0) * float(config.impuesto_turistico if config else 4.0) / 100,
+        2,
+    )
+    saldo = (reserva.total or 0) + impuesto_turistico + total_consumos_pendientes + mora - float(total_pagado)
     es_efectivo = metodo_pago.strip().lower() == "efectivo"
     monto_recibido = round(float(efectivo_recibido), 2) if es_efectivo and efectivo_recibido is not None else (round(float(saldo), 2) if saldo > 0 else 0)
     cambio = round(monto_recibido - float(saldo), 2) if es_efectivo and saldo > 0 else 0
@@ -559,7 +576,7 @@ def culminar_salida(
 
     pagos = db.query(Pago).filter(Pago.reserva_id == reserva_id).order_by(Pago.pagado_en).all()
     total_pagado = sum(p.monto for p in pagos)
-    total_factura = (reserva.total or 0) + total_consumos + mora
+    total_factura = (reserva.total or 0) + impuesto_turistico + total_consumos + mora
     total_cubierto = float(total_pagado) + float(consumos_pagados_previamente)
     saldo_final = total_factura - total_cubierto
     if saldo_final < 0:
@@ -580,6 +597,11 @@ def culminar_salida(
         "fecha_entrada": str(reserva.fecha_entrada),
         "fecha_salida": str(reserva.fecha_salida),
         "noches": noches,
+        "fiscal": {
+            "cai": config.cai if config else "",
+            "rango_autorizado": config.rango_autorizado if config else "",
+            "fecha_limite_emision": config.fecha_limite_emision if config else "",
+        },
         "items": [
             {
                 "descripcion": f"Hospedaje habitacion {habitacion.numero if habitacion else ''}{f' ({habitacion.tipo_habitacion.nombre})' if habitacion and habitacion.tipo_habitacion else ''}",
@@ -609,6 +631,9 @@ def culminar_salida(
             "subtotal_habitacion": float(reserva.subtotal or 0),
             "descuento": float(reserva.descuento or 0),
             "impuesto": float(reserva.impuesto or 0),
+            "impuesto_turistico": float(impuesto_turistico),
+            "tasa_impuesto": float(config.impuesto if config else 15.0),
+            "tasa_impuesto_turistico": float(config.impuesto_turistico if config else 4.0),
             "total_habitacion": float(reserva.total or 0),
             "total_consumos": float(total_consumos),
             "consumos_pagados_previamente": float(consumos_pagados_previamente),

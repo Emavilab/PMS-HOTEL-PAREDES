@@ -1,3 +1,9 @@
+"""Consultas y exportaciones operativas, financieras y ejecutivas.
+
+Los reportes agregan datos de reservas, estadías, cargos, pagos, ventas,
+housekeeping y caja respetando los permisos del módulo Reportes.
+"""
+
 from datetime import date, datetime, timezone, timedelta
 from typing import Optional, List
 from collections import defaultdict
@@ -258,6 +264,19 @@ def reporte_ingresos(
         .scalar()
         or 0
     )
+    config = db.query(HotelConfig).first()
+    impuesto_turistico = (
+        db.query(func.coalesce(func.sum(Reserva.subtotal), 0))
+        .filter(
+            Reserva.creado_en >= desde,
+            Reserva.creado_en <= hasta,
+        )
+        .scalar()
+        or 0
+    )
+    impuesto_turistico = float(impuesto_turistico) * float(
+        config.impuesto_turistico if config else 4.0
+    ) / 100
 
     total_ingresos = (
         db.query(func.coalesce(func.sum(Reserva.total), 0))
@@ -277,6 +296,7 @@ def reporte_ingresos(
         total_pagos=float(total_pagos),
         descuentos_aplicados=float(descuentos),
         impuestos_recaudados=float(impuestos),
+        impuesto_turistico_recaudado=round(impuesto_turistico, 2),
     )
 
 

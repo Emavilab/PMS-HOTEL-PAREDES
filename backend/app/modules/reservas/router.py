@@ -1,3 +1,9 @@
+"""Operaciones de reservas y consulta de disponibilidad.
+
+La validación de solapamientos y los bloqueos transaccionales protegen el
+inventario cuando varios usuarios intentan reservar simultáneamente.
+"""
+
 import secrets
 import string
 from datetime import date
@@ -34,6 +40,7 @@ ESTADOS_OCUPAN_INVENTARIO = ["PENDIENTE", "CONFIRMADA", "CHECKED_IN"]
 
 
 def generar_codigo_confirmacion() -> str:
+    """Genera un código corto y no predecible para identificar la reserva."""
     caracteres = string.ascii_uppercase + string.digits
     return "RES-" + "".join(secrets.choice(caracteres) for _ in range(8))
 
@@ -46,6 +53,7 @@ def _tiene_conflicto(
     tipo_habitacion_id: str | None = None,
     excluir_reserva_id: str | None = None,
 ) -> bool:
+    """Detecta reservas activas que se solapan con el intervalo solicitado."""
     consulta = db.query(Reserva).filter(
         Reserva.estado.in_(ESTADOS_OCUPAN_INVENTARIO),
         Reserva.fecha_entrada < fecha_salida,
@@ -61,6 +69,7 @@ def _tiene_conflicto(
 
 
 def _bloquear_habitacion(db: Session, habitacion_id: str) -> Habitacion | None:
+    """Bloquea una habitación durante la validación transaccional."""
     return (
         db.query(Habitacion)
         .filter(Habitacion.id == habitacion_id)
@@ -70,6 +79,7 @@ def _bloquear_habitacion(db: Session, habitacion_id: str) -> Habitacion | None:
 
 
 def _bloquear_tipo(db: Session, tipo_habitacion_id: str) -> None:
+    """Bloquea las habitaciones de un tipo para contar disponibilidad segura."""
     db.query(Habitacion).filter(
         Habitacion.tipo_habitacion_id == tipo_habitacion_id,
     ).with_for_update().all()
@@ -125,7 +135,7 @@ def _recalcular_totales(db: Session, reserva: Reserva):
     noches = max((reserva.fecha_salida - reserva.fecha_entrada).days, 0)
 
     config = db.query(HotelConfig).first()
-    tasa = ((config.impuesto if config else 15.0) or 15.0) / 100
+    tasa = (config.impuesto if config is not None else 15.0) / 100
 
     cargos = db.query(func.coalesce(func.sum(Cargo.total), 0)).filter(
         Cargo.reserva_id == reserva.id
